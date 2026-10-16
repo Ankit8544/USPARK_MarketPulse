@@ -4,7 +4,7 @@ app = Flask(__name__)
 
 @app.route("/")
 def home():
-    return "USPARK - Ujjivan Small Finance Bank"
+    return "USPARK MarketPulse is running!"
 
 @app.route("/status")
 def status():
@@ -14,4 +14,4 @@ def status():
     })
 
 if __name__ == "__main__":
-    app.run(debug=True)
+    app.run()
