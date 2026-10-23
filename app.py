@@ -9,12 +9,12 @@ import requests
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
-from telegram import handle_telegram_update
-
 
 # Load environment variables before importing telegram.py
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
+
+from telegram import handle_telegram_update
 
 IST = ZoneInfo("Asia/Kolkata")
 app = Flask(__name__)
