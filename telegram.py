@@ -5,7 +5,7 @@ from html import escape
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pymongo import ReturnDocument
-from Functions.MongoDB import users_collection, IST
+from Functions.MongoDB import users_collection
 
 IST = ZoneInfo("Asia/Kolkata")
 
