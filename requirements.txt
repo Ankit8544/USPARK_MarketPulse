@@ -5,3 +5,17 @@ python-dotenv
 gunicorn
 APScheduler
 yfinance
+pandas
+pytz
+google-generativeai
+user-agents
+flask-cors
+pymongo
+certifi
+numpy
+ta
+tweepy
+praw
+textblob
+razorpay
+setuptools
