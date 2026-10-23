@@ -5,7 +5,8 @@ from html import escape
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from pymongo import ReturnDocument
-from Functions.MongoDB import users_collection
+from Functions.MongoDB import users_collection, get_all_chat_ids
+from Functions.Pre_Market_Brief import get_pre_market_brief
 
 IST = ZoneInfo("Asia/Kolkata")
 
@@ -15,7 +16,6 @@ if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is missing")
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
-
 
 def send_message(chat_id, text):
     """Send a Telegram message."""
@@ -35,7 +35,6 @@ def send_message(chat_id, text):
         raise RuntimeError("Telegram message could not be sent")
 
     return result
-
 
 def create_welcome_post(user):
     """Create a personalised welcome post."""
@@ -71,7 +70,6 @@ def create_welcome_post(user):
         "AI insights are for informational purposes only.\n\n"
         f"💚 Thanks for joining us, {name}!"
     )
-
 
 def handle_telegram_update(update):
     """Save/update Telegram user details when /start is received."""
@@ -126,12 +124,78 @@ def handle_telegram_update(update):
         return_document=ReturnDocument.AFTER,
     )
 
-    print(
-        f"User saved: {user_id} | "
-        f"Start count: {saved_user['start_count']}"
-    )
-
     # Send welcome message after the database operation succeeds.
     welcome_post = create_welcome_post(user)
     send_message(chat_id, welcome_post)
+
+def format_pre_market_post(data):
+    """Format pre-market data as a Telegram HTML post."""
+
+    def value(item, key, default="N/A"):
+        result = item.get(key)
+        return escape(str(result)) if result is not None else default
+
+    gold = data["gold"]
+    usd = data["usd_inr"]
+    sensex = data["bse_sensex"]
+    nifty = data["nse_nifty_50"]
+    nse = data["ujjivan_sfb_nse"]
+    bse = data["ujjivan_sfb_bse"]
+
+    generated_at = datetime.fromisoformat(
+        data["generated_at"]
+    ).astimezone(IST).strftime("%d %b %Y | %I:%M %p IST")
+
+    return (
+        "📊 <b>USPARK MARKET UPDATES</b>\n"
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "🌅 <b>PRE-MARKET BRIEF</b>\n"
+        f"📅 {generated_at}\n\n"
+
+        "🪙 <b>GOLD</b>\n"
+        f"Price: ₹{value(gold, 'price')}\n"
+        f"Change: {value(gold, 'change')}"
+        f" ({value(gold, 'change_percent')})\n\n"
+
+        "💵 <b>USD / INR</b>\n"
+        f"Rate: ₹{value(usd, 'rate')}\n"
+        f"Change: {value(usd, 'change_percent')}\n\n"
+
+        "📈 <b>BSE SENSEX</b>\n"
+        f"Level: {value(sensex, 'price')}\n"
+        f"Change: {value(sensex, 'change')}"
+        f" ({value(sensex, 'change_percent')})\n\n"
+
+        "📉 <b>NSE NIFTY 50</b>\n"
+        f"Level: {value(nifty, 'price')}\n"
+        f"Change: {value(nifty, 'change')}"
+        f" ({value(nifty, 'change_percent')})\n\n"
+
+        "🏦 <b>UJJIVAN SFB</b>\n"
+        f"NSE: ₹{value(nse, 'price')} | "
+        f"Change: {value(nse, 'change_percent')}\n"
+        f"BSE: ₹{value(bse, 'price')} | "
+        f"Change: {value(bse, 'change_percent')}\n\n"
+
+        "━━━━━━━━━━━━━━━━━━━━\n"
+        "ℹ️ Market data may be delayed or indicative.\n"
+        "💚 <b>Stay Informed. Understand the Market.</b>"
+    )
+
+def send_pre_market_brief_to_all():
+    """Send the pre-market brief to all saved Telegram chats."""
+
+    data = get_pre_market_brief()
+    post = format_pre_market_post(data)
+    chat_ids = get_all_chat_ids()
+
+    sent = 0
+    failed = 0
+
+    for chat_id in chat_ids:
+        try:
+            send_message(chat_id, post)
+            sent += 1
+        except Exception as exc:
+            failed += 1
 

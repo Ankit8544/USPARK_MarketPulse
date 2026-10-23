@@ -64,4 +64,12 @@ users_collection.create_index(
 
 print("MongoDB database and users collection ready!")
 
+def get_all_chat_ids():
+    """Return all Telegram chat IDs from MongoDB."""
+    chat_ids = users_collection.find(
+        {"chat_id": {"$exists": True, "$ne": None}},
+        {"_id": 0, "chat_id": 1}
+    )
+
+    return [user["chat_id"] for user in chat_ids]
 
