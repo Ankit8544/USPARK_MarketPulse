@@ -22,7 +22,6 @@ IST = ZoneInfo("Asia/Kolkata")
 app = Flask(__name__)
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
@@ -31,49 +30,11 @@ scheduler = BackgroundScheduler(timezone=IST)
 send_lock = threading.Lock()
 
 
-# ---------------- TELEGRAM WEBHOOK SETUP ----------------
-
-def configure_telegram_webhook():
-    if not BOT_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN is missing")
-        return
-
-    base_url = (
-        os.getenv("TELEGRAM_WEBHOOK_URL")
-        or os.getenv("RENDER_EXTERNAL_URL")
-    )
-
-    if not base_url:
-        logger.error(
-            "Set RENDER_EXTERNAL_URL or TELEGRAM_WEBHOOK_URL"
-        )
-        return
-
-    webhook_url = base_url.rstrip("/") + "/telegram-webhook"
-
-    try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
-            json={"url": webhook_url},
-            timeout=20,
-        )
-        response.raise_for_status()
-        result = response.json()
-
-        if result.get("ok"):
-            logger.info("Telegram webhook configured: %s", webhook_url)
-        else:
-            logger.error("Webhook registration failed: %s", result)
-
-    except Exception:
-        logger.exception("Could not configure Telegram webhook")
-
-
 # ---------------- GOLD PRICE UPDATE ----------------
 
 def send_gold_update():
     if not send_lock.acquire(blocking=False):
-        logger.warning("Gold update already running")
+        logging.warning("Gold update already running")
         return False
 
     try:
@@ -83,7 +44,7 @@ def send_gold_update():
         data = Gold_Price.get_gold_price()
 
         if not data or not data.get("ok", True):
-            raise RuntimeError(f"Invalid gold data: {data}")
+            raise RuntimeError(f"Gold API returned invalid data: {data}")
 
         price = data.get("price")
         if price is None:
@@ -106,7 +67,7 @@ def send_gold_update():
 
         message = (
             f"🟡 {data['name']} ({data['symbol']})\n"
-            "━━━━━━━━━━━━━━━━━━\n"
+            f"━━━━━━━━━━━━━━━━━━\n"
             f"💰 Price: ${price:,.2f}\n"
             f"📊 Change: {change_text} ({percent_text})\n"
             f"🕒 Updated: {now}"
@@ -114,20 +75,23 @@ def send_gold_update():
 
         response = requests.post(
             f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage",
-            json={"chat_id": CHAT_ID, "text": message},
+            data={"chat_id": CHAT_ID, "text": message},
             timeout=20,
         )
         response.raise_for_status()
 
         result = response.json()
-        if not result.get("ok"):
-            raise RuntimeError(f"Telegram rejected message: {result}")
 
-        logger.info("Gold update sent successfully")
+        if not result.get("ok"):
+            raise RuntimeError(
+                f"Telegram rejected message: {result}"
+            )
+
+        logging.info("Gold update sent successfully")
         return True
 
     except Exception:
-        logger.exception("Could not send gold update")
+        logging.exception("Could not send gold update")
         return False
 
     finally:
@@ -142,6 +106,8 @@ def home():
         "app": "USPARK Market Updates",
         "status": "running",
         "timezone": "Asia/Kolkata",
+        "hourly_schedule": "Every hour at HH:00",
+        "prewake_schedule": "Every hour at HH:55",
     })
 
 
@@ -150,6 +116,7 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
+# NEW: Receive Telegram /start updates
 @app.post("/telegram-webhook")
 def telegram_webhook():
     update = request.get_json(silent=True)
@@ -158,17 +125,14 @@ def telegram_webhook():
         return jsonify({"ok": False, "error": "Invalid update"}), 400
 
     try:
-        logger.info(
-            "Telegram update received; update_id=%s",
-            update.get("update_id")
-        )
+        logging.info("Telegram update received")
 
         handle_telegram_update(update)
 
         return jsonify({"ok": True}), 200
 
     except Exception:
-        logger.exception("Telegram update processing failed")
+        logging.exception("Telegram webhook processing failed")
         return jsonify({"ok": False}), 500
 
 
@@ -200,18 +164,24 @@ def start_scheduler():
     )
 
     def prewake():
-        base_url = (
-            os.getenv("RENDER_EXTERNAL_URL")
-            or "http://127.0.0.1:5000"
+        logging.info(
+            "Pre-wakeup time reached: %s",
+            datetime.now(IST)
         )
 
         try:
+            base_url = os.getenv(
+                "RENDER_EXTERNAL_URL",
+                "http://127.0.0.1:5000"
+            )
+
             requests.get(
-                base_url.rstrip("/") + "/health",
+                base_url + "/health",
                 timeout=10,
             ).raise_for_status()
+
         except requests.RequestException:
-            logger.exception("Pre-wakeup request failed")
+            logging.exception("Pre-wakeup request failed")
 
     scheduler.add_job(
         prewake,
@@ -225,15 +195,19 @@ def start_scheduler():
     )
 
     scheduler.start()
-    logger.info("Gold price scheduler started")
-
-
-# Register webhook and start scheduler when the app loads.
-# Use a single Gunicorn worker to avoid duplicate schedulers.
-configure_telegram_webhook()
-start_scheduler()
+    logging.info("Gold price scheduler started")
 
 
 if __name__ == "__main__":
+    start_scheduler()
+
+    # Preserve the existing startup gold update
+    send_gold_update()
+
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
