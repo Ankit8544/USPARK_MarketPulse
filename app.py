@@ -7,14 +7,16 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import requests
-from flask import Flask, jsonify
+from flask import Flask, jsonify, request
 from dotenv import load_dotenv
 from apscheduler.schedulers.background import BackgroundScheduler
 
-from Functions import Gold_Price
-
+# Load environment variables before importing telegram.py
 BASE_DIR = Path(__file__).resolve().parent
 load_dotenv(BASE_DIR / ".env", override=True)
+
+from Functions import Gold_Price
+from telegram import handle_telegram_update
 
 IST = ZoneInfo("Asia/Kolkata")
 app = Flask(__name__)
@@ -27,6 +29,8 @@ CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
 scheduler = BackgroundScheduler(timezone=IST)
 send_lock = threading.Lock()
 
+
+# ---------------- GOLD PRICE UPDATE ----------------
 
 def send_gold_update():
     if not send_lock.acquire(blocking=False):
@@ -49,13 +53,17 @@ def send_gold_update():
         change = data.get("change")
         change_percent = data.get("change_percent")
 
-        change_text = f"{change:+,.2f}" if change is not None else "N/A"
+        change_text = (
+            f"{change:+,.2f}" if change is not None else "N/A"
+        )
         percent_text = (
             f"{change_percent:+.2f}%"
             if change_percent is not None else "N/A"
         )
 
-        now = datetime.now(IST).strftime("%d-%m-%Y %I:%M:%S %p IST")
+        now = datetime.now(IST).strftime(
+            "%d-%m-%Y %I:%M:%S %p IST"
+        )
 
         message = (
             f"🟡 {data['name']} ({data['symbol']})\n"
@@ -73,8 +81,11 @@ def send_gold_update():
         response.raise_for_status()
 
         result = response.json()
+
         if not result.get("ok"):
-            raise RuntimeError(f"Telegram rejected message: {result}")
+            raise RuntimeError(
+                f"Telegram rejected message: {result}"
+            )
 
         logging.info("Gold update sent successfully")
         return True
@@ -87,10 +98,12 @@ def send_gold_update():
         send_lock.release()
 
 
+# ---------------- FLASK ROUTES ----------------
+
 @app.get("/")
 def home():
     return jsonify({
-        "app": "Gold Price Telegram Bot",
+        "app": "USPARK Market Updates",
         "status": "running",
         "timezone": "Asia/Kolkata",
         "hourly_schedule": "Every hour at HH:00",
@@ -103,17 +116,42 @@ def health():
     return jsonify({"status": "ok"}), 200
 
 
+# NEW: Receive Telegram /start updates
+@app.post("/telegram-webhook")
+def telegram_webhook():
+    update = request.get_json(silent=True)
+
+    if not isinstance(update, dict):
+        return jsonify({"ok": False, "error": "Invalid update"}), 400
+
+    try:
+        logging.info("Telegram update received")
+
+        handle_telegram_update(update)
+
+        return jsonify({"ok": True}), 200
+
+    except Exception:
+        logging.exception("Telegram webhook processing failed")
+        return jsonify({"ok": False}), 500
+
+
 @app.post("/send-now")
 def send_now():
-    threading.Thread(target=send_gold_update, daemon=True).start()
+    threading.Thread(
+        target=send_gold_update,
+        daemon=True
+    ).start()
+
     return jsonify({"status": "triggered"}), 202
 
+
+# ---------------- SCHEDULER ----------------
 
 def start_scheduler():
     if scheduler.running:
         return
 
-    # Internal scheduler: useful while the process is awake.
     scheduler.add_job(
         send_gold_update,
         "cron",
@@ -125,16 +163,23 @@ def start_scheduler():
         misfire_grace_time=300,
     )
 
-    # Pre-wakeup request to this app five minutes before each hour.
-    # This is a fallback only; it cannot run while the app sleeps.
     def prewake():
-        logging.info("Pre-wakeup time reached: %s", datetime.now(IST))
+        logging.info(
+            "Pre-wakeup time reached: %s",
+            datetime.now(IST)
+        )
+
         try:
-            requests.get(
-                os.getenv("RENDER_EXTERNAL_URL", "http://127.0.0.1:5000")
-                + "/health",
-                timeout=10,
+            base_url = os.getenv(
+                "RENDER_EXTERNAL_URL",
+                "http://127.0.0.1:5000"
             )
+
+            requests.get(
+                base_url + "/health",
+                timeout=10,
+            ).raise_for_status()
+
         except requests.RequestException:
             logging.exception("Pre-wakeup request failed")
 
@@ -150,13 +195,19 @@ def start_scheduler():
     )
 
     scheduler.start()
+    logging.info("Gold price scheduler started")
 
 
 if __name__ == "__main__":
     start_scheduler()
 
-    # Send one message immediately when this process starts.
+    # Preserve the existing startup gold update
     send_gold_update()
 
     port = int(os.environ.get("PORT", "5000"))
-    app.run(host="0.0.0.0", port=port, debug=False)
+
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
