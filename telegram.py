@@ -2,6 +2,12 @@
 import os
 import requests
 from html import escape
+from datetime import datetime
+from zoneinfo import ZoneInfo
+from pymongo import ReturnDocument
+from Functions.MongoDB import users_collection, IST
+
+IST = ZoneInfo("Asia/Kolkata")
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 
@@ -65,9 +71,9 @@ def create_welcome_post(user):
 
 
 def handle_telegram_update(update):
-    """Process incoming Telegram updates."""
-    message = update.get("message") or {}
+    """Save/update Telegram user details when /start is received."""
 
+    message = update.get("message") or {}
     text = message.get("text") or ""
     chat = message.get("chat") or {}
     user = message.get("from") or {}
@@ -78,6 +84,51 @@ def handle_telegram_update(update):
 
     command = text.split()[0].split("@")[0] if text.strip() else ""
 
-    if command == "/start":
-        welcome_post = create_welcome_post(user)
-        send_message(chat_id, welcome_post)
+    if command != "/start":
+        return
+
+    user_id = user.get("id")
+
+    if not user_id:
+        return
+
+    now = datetime.now(IST)
+
+    # Save a new user or update the existing user's document.
+    # user_id is unique, so repeated /start commands won't
+    # create duplicate documents.
+    saved_user = users_collection.find_one_and_update(
+        {"user_id": user_id},
+        {
+            "$set": {
+                "username": user.get("username"),
+                "first_name": user.get("first_name"),
+                "last_name": user.get("last_name"),
+                "language_code": user.get("language_code"),
+                "is_bot": user.get("is_bot", False),
+                "chat_id": chat_id,
+                "chat_type": chat.get("type"),
+                "last_start_at": now,
+                "updated_at": now,
+            },
+            "$setOnInsert": {
+                "user_id": user_id,
+                "first_start_at": now,
+            },
+            "$inc": {
+                "start_count": 1,
+            },
+        },
+        upsert=True,
+        return_document=ReturnDocument.AFTER,
+    )
+
+    print(
+        f"User saved: {user_id} | "
+        f"Start count: {saved_user['start_count']}"
+    )
+
+    # Send welcome message after the database operation succeeds.
+    welcome_post = create_welcome_post(user)
+    send_message(chat_id, welcome_post)
+
