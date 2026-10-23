@@ -40,10 +40,13 @@ def send_message(chat_id, text):
 def create_welcome_post(user):
     """Create a personalised welcome post."""
     first_name = user.get("first_name") or ""
+    last_name = user.get("last_name") or ""
     username = user.get("username")
 
-    if first_name.strip():
-        name = first_name.strip()
+    full_name = f"{first_name.strip()} {last_name.strip()}".strip()
+
+    if full_name:
+        name = full_name
     elif username:
         name = f"@{username}"
     else:
@@ -52,7 +55,7 @@ def create_welcome_post(user):
     name = escape(name)
 
     return (
-        f"👋 <b>WELCOME, {name.upper()}!</b>\n"
+        f"👋 <b>WELCOME, {name}!</b>\n"
         "━━━━━━━━━━━━━━━━━━\n\n"
         "📊 <b>USPARK Market Updates</b>\n\n"
         "Welcome to your daily market companion! 🚀\n\n"
