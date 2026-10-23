@@ -85,6 +85,9 @@ if __name__ == "__main__":
         "daily at 08:45 AM IST"
     )
 
+    print("Starting Flask app...")
+    print("Pre-market scheduler started: daily at 08:45 AM IST")
+    
     port = int(os.environ.get("PORT", "5000"))
 
     try:
