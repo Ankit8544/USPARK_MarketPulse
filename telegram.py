@@ -54,8 +54,8 @@ def create_welcome_post(user):
     name = escape(name)
 
     return (
-        f"👋 <b>Welcome, {name}! to your daily market companion! 🚀</b>\n"
-        "💰 <b>What you can explore:</b>\n\n"
+        f"👋 <b>Welcome, {name}! to your daily market companion! 🚀</b>\n\n"
+        "💰 <b>What you can explore:</b>\n"
         "🪙 Gold Price Updates\n"
         "💵 USD/INR Exchange Rate\n"
         "📈 BSE Sensex Updates\n"
