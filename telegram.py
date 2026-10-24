@@ -54,21 +54,13 @@ def create_welcome_post(user):
     name = escape(name)
 
     return (
-        f"👋 <b>WELCOME, {name}!</b>\n"
-        "━━━━━━━━━━━━━━━━━━\n\n"
-        "📊 <b>USPARK Market Updates</b>\n\n"
-        "Welcome to your daily market companion! 🚀\n\n"
+        f"👋 <b>Welcome, {name}! to your daily market companion! 🚀</b>\n"
         "💰 <b>What you can explore:</b>\n\n"
         "🪙 Gold Price Updates\n"
         "💵 USD/INR Exchange Rate\n"
         "📈 BSE Sensex Updates\n"
         "🏦 Ujjivan Small Finance Bank Share Price\n"
         "🤖 AI-Powered Market Insights\n\n"
-        "━━━━━━━━━━━━━━━━━━\n"
-        "✨ <b>Stay Informed. Understand the Market.</b>\n\n"
-        "Market data may be delayed or indicative. "
-        "AI insights are for informational purposes only.\n\n"
-        f"💚 Thanks for joining us, {name}!"
     )
 
 def handle_telegram_update(update):
