@@ -154,10 +154,7 @@ def format_pre_market_post(data):
     ).astimezone(IST).strftime("%d %b %Y | %I:%M %p IST")
 
     return (
-        "📊 <b>USPARK MARKET UPDATES</b>\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "🌅 <b>PRE-MARKET BRIEF</b>\n"
-        f"📅 {generated_at}\n\n"
+        f"🌅 <b>PRE-MARKET BRIEF</b> {generated_at}\n\n"
 
         "🪙 <b>GOLD</b>\n"
         f"Price: {number(gold, 'price', prefix='$')}\n"
