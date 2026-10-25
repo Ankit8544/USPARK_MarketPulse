@@ -127,6 +127,21 @@ def format_pre_market_post(data):
         result = item.get(key)
         return escape(str(result)) if result is not None else default
 
+    def number(item, key, prefix="", suffix="", default="N/A"):
+        """Format numeric values to two decimal places with separators and symbols."""
+        result = item.get(key)
+        if result is None:
+            return default
+        try:
+            cleaned = str(result).replace(",", "").replace("₹", "").replace("$", "").strip()
+            formatted = f"{float(cleaned):,.2f}"
+        except (TypeError, ValueError):
+            return escape(str(result))
+        return f"{prefix}{formatted}{suffix}"
+
+    def percent(item, key):
+        return number(item, key, suffix="%")
+
     gold = data["gold"]
     usd = data["usd_inr"]
     sensex = data["bse_sensex"]
@@ -145,29 +160,29 @@ def format_pre_market_post(data):
         f"📅 {generated_at}\n\n"
 
         "🪙 <b>GOLD</b>\n"
-        f"Price: ₹{value(gold, 'price')}\n"
-        f"Change: {value(gold, 'change')}"
-        f" ({value(gold, 'change_percent')})\n\n"
+        f"Price: {number(gold, 'price', prefix='$')}\n"
+        f"Change: {number(gold, 'change', prefix='$')}"
+        f" ({percent(gold, 'change_percent')})\n\n"
 
         "💵 <b>USD / INR</b>\n"
-        f"Rate: ₹{value(usd, 'rate')}\n"
-        f"Change: {value(usd, 'change_percent')}\n\n"
+        f"Rate: {number(usd, 'rate', prefix='₹')}\n"
+        f"Change: {percent(usd, 'change_percent')}\n\n"
 
         "📈 <b>BSE SENSEX</b>\n"
-        f"Level: {value(sensex, 'price')}\n"
-        f"Change: {value(sensex, 'change')}"
-        f" ({value(sensex, 'change_percent')})\n\n"
+        f"Level: {number(sensex, 'price')}\n"
+        f"Change: {number(sensex, 'change')}"
+        f" ({percent(sensex, 'change_percent')})\n\n"
 
         "📉 <b>NSE NIFTY 50</b>\n"
-        f"Level: {value(nifty, 'price')}\n"
-        f"Change: {value(nifty, 'change')}"
-        f" ({value(nifty, 'change_percent')})\n\n"
+        f"Level: {number(nifty, 'price')}\n"
+        f"Change: {number(nifty, 'change')}"
+        f" ({percent(nifty, 'change_percent')})\n\n"
 
         "🏦 <b>UJJIVAN SFB</b>\n"
-        f"NSE: ₹{value(nse, 'price')} | "
-        f"Change: {value(nse, 'change_percent')}\n"
-        f"BSE: ₹{value(bse, 'price')} | "
-        f"Change: {value(bse, 'change_percent')}\n\n"
+        f"NSE: {number(nse, 'price', prefix='₹')} | "
+        f"Change: {percent(nse, 'change_percent')}\n"
+        f"BSE: {number(bse, 'price', prefix='₹')} | "
+        f"Change: {percent(bse, 'change_percent')}\n\n"
 
         "━━━━━━━━━━━━━━━━━━━━\n"
         "ℹ️ Market data may be delayed or indicative.\n"
