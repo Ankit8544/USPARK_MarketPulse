@@ -36,9 +36,12 @@ def get_pre_market_brief():
         "generated_at": generated_at.isoformat(),
 
         "gold": {
-            "price": safe_value(gold, "price"),
-            "change": safe_value(gold, "change_display"),
-            "change_percent": safe_value(gold, "change_percent_display"),
+            "price_inr_per_10g": safe_value(gold, "price_inr_per_10g"),
+            "change_inr_per_10g": safe_value(gold, "change_inr_per_10g"),
+            "change_inr_percent": safe_value(gold, "change_inr_percent"),
+            "price_after_import_duty_per_10g": safe_value(
+                gold, "price_after_import_duty_per_10g"
+            ),
             "market_time": safe_value(gold, "market_time"),
         },
 
