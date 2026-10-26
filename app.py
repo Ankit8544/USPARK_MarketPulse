@@ -49,8 +49,8 @@ scheduler = BackgroundScheduler(
 scheduler.add_job(
     func=run_pre_market_job,
     trigger="cron",
-    hour=19,
-    minute=10,
+    hour=8,
+    minute=45,
     id="pre_market_brief",
     replace_existing=True,
     misfire_grace_time=3600,
