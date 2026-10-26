@@ -157,9 +157,10 @@ def format_pre_market_post(data):
         f"🌅 <b>PRE-MARKET BRIEF</b> {generated_at}\n\n"
 
         "🪙 <b>GOLD</b>\n"
-        f"Price: {number(gold, 'price', prefix='$')}\n"
-        f"Change: {number(gold, 'change', prefix='$')}"
-        f" ({percent(gold, 'change_percent')})\n\n"
+        f"Price before duty: {number(gold, 'price_inr_per_10g', prefix='₹')}\n"
+        f"Change: {number(gold, 'change_inr_per_10g', prefix='₹')}"
+        f" ({percent(gold, 'change_inr_percent')})\n"
+        f"Price after 15% import duty: {number(gold, 'price_after_import_duty_per_10g', prefix='₹')}\n\n"
 
         "💵 <b>USD / INR</b>\n"
         f"Rate: {number(usd, 'rate', prefix='₹')}\n"
