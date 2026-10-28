@@ -51,8 +51,8 @@ def get_gold_price():
         change_percent = _number(info.get("regularMarketChangePercent"))
         previous_close_usd_per_oz = _number(info.get("regularMarketPreviousClose") or info.get("previousClose"))
 
-        # History is used only as a fallback for the latest available price and
-        # for high/low/time metadata, not to invent the quote's change fields.
+        # Yahoo's yfinance `info` response may omit change fields for futures.
+        # Fetch history so missing quote fields can be derived from Yahoo data.
         intraday = ticker.history(
             period="5d", interval="5m", auto_adjust=False, timeout=20
         )
@@ -67,6 +67,33 @@ def get_gold_price():
 
         if price_usd_per_oz is None:
             return {"ok": False, "error": "Yahoo Finance gold price unavailable"}
+
+        # Fallback: yfinance often does not expose regularMarketChange fields
+        # for GC=F. Use Yahoo's previous close, then calculate change from the
+        # latest available quote/history price so Telegram does not show N/A.
+        if previous_close_usd_per_oz is None:
+            daily = ticker.history(
+                period="10d", interval="1d", auto_adjust=False, timeout=20
+            )
+            if daily is not None and not daily.empty:
+                daily = daily.dropna(subset=["Close"])
+                if not daily.empty:
+                    # Prefer the most recent daily close before the latest
+                    # intraday candle's date; otherwise use the prior daily row.
+                    if latest_time is not None:
+                        prior_daily = daily[[idx.date() < latest_time.date() for idx in daily.index]]
+                    else:
+                        prior_daily = daily.iloc[:-1]
+                    if not prior_daily.empty:
+                        previous_close_usd_per_oz = _number(prior_daily.iloc[-1]["Close"])
+                    elif len(daily) > 1:
+                        previous_close_usd_per_oz = _number(daily.iloc[-2]["Close"])
+
+        if change_usd_per_oz is None and previous_close_usd_per_oz is not None:
+            change_usd_per_oz = price_usd_per_oz - previous_close_usd_per_oz
+
+        if change_percent is None and change_usd_per_oz is not None and previous_close_usd_per_oz not in (None, 0):
+            change_percent = (change_usd_per_oz / previous_close_usd_per_oz) * 100
 
         # Convert USD/oz to USD/gram first, then multiply by 10 for USD/10g.
         price_usd_per_gram = price_usd_per_oz / GRAMS_PER_TROY_OUNCE
