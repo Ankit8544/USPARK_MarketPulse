@@ -119,8 +119,17 @@ def handle_telegram_update(update):
     welcome_post = create_welcome_post(user)
     send_message(chat_id, welcome_post)
 
-def format_pre_market_post(data):
-    """Format pre-market data as a Telegram HTML post."""
+def format_pre_market_post(data, user=None):
+    """Format the morning market update as a personalised Telegram HTML post."""
+    user = user or {}
+    first_name = (user.get("first_name") or "").strip()
+    last_name = (user.get("last_name") or "").strip()
+    full_name = f"{first_name} {last_name}".strip()
+    if not full_name:
+        full_name = (user.get("username") or "there").strip()
+        if full_name != "there":
+            full_name = f"@{full_name}"
+    safe_name = escape(full_name)
 
     def value(item, key, default="N/A"):
         result = item.get(key)
@@ -153,7 +162,8 @@ def format_pre_market_post(data):
     ).astimezone(IST).strftime("%d %b %Y | %I:%M %p IST")
 
     return (
-        f"🌅 <b>PRE-MARKET BRIEF</b> {generated_at}\n\n"
+        f"🌅 <b>Good Morning, {safe_name}!</b> 👋\n"
+        f"📊 <b>DAILY MARKET UPDATE</b> | {generated_at}\n\n"
 
         "🪙 <b>GOLD</b>\n"
         f"Price per 10gm: {number(gold, 'price_after_import_duty_per_10g', prefix='₹')}\n"
@@ -189,7 +199,6 @@ def send_pre_market_brief_to_all():
     """Send the pre-market brief to all saved Telegram chats."""
 
     data = get_pre_market_brief()
-    post = format_pre_market_post(data)
     chat_ids = get_all_chat_ids()
 
     sent = 0
@@ -197,6 +206,8 @@ def send_pre_market_brief_to_all():
 
     for chat_id in chat_ids:
         try:
+            user = users_collection.find_one({"chat_id": chat_id}) or {}
+            post = format_pre_market_post(data, user)
             send_message(chat_id, post)
             sent += 1
         except Exception as exc:
