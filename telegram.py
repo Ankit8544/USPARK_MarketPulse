@@ -61,9 +61,15 @@ def get_time_greeting(now=None):
     return "Hello"
 
 def create_personal_greeting(user):
-    name = get_display_name(user)
+    first_name = (user.get("first_name") or "").strip()
+
+    if not first_name:
+        first_name = get_display_name(user)
+
+    name = escape(first_name)
     greeting = get_time_greeting()
-    return f"👋 <b>{greeting}, {name}!</b>\n\nHow can I help you today? 😊"
+
+    return f"👋 <b>{greeting} {name}</b>, how can I help you today? 😊"
 
 def create_welcome_post(user):
     """Create a personalised welcome post for /start."""
