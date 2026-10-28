@@ -1,4 +1,6 @@
 import os
+import re
+import logging
 import requests
 from html import escape
 from datetime import datetime
@@ -6,118 +8,170 @@ from zoneinfo import ZoneInfo
 from pymongo import ReturnDocument
 from Functions.MongoDB import users_collection, get_all_chat_ids
 from Functions.Pre_Market_Brief import get_pre_market_brief
+from Functions.GeminiAI import AI_Generated_Answer
 
 IST = ZoneInfo("Asia/Kolkata")
+logger = logging.getLogger(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-
 if not BOT_TOKEN:
     raise RuntimeError("TELEGRAM_BOT_TOKEN environment variable is missing")
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-def send_message(chat_id, text):
-    """Send a Telegram message."""
-    response = requests.post(
-        f"{TELEGRAM_API}/sendMessage",
-        json={
-            "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "HTML"
-        },
-        timeout=15
-    )
+
+def send_message(chat_id, text, reply_to_message_id=None):
+    """Send a Telegram HTML message to the specified chat only."""
+    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    if reply_to_message_id is not None:
+        payload["reply_to_message_id"] = reply_to_message_id
+        payload["allow_sending_without_reply"] = True
+    response = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
     response.raise_for_status()
     result = response.json()
-
     if not result.get("ok"):
         raise RuntimeError("Telegram message could not be sent")
-
     return result
 
+
+def get_display_name(user):
+    """Return the user's Telegram name, safely escaped for Telegram HTML."""
+    first_name = (user.get("first_name") or "").strip()
+    last_name = (user.get("last_name") or "").strip()
+    full_name = f"{first_name} {last_name}".strip()
+    if not full_name:
+        username = (user.get("username") or "").strip()
+        full_name = f"@{username}" if username else "there"
+    return escape(full_name)
+
+
+def get_time_greeting(now=None):
+    """Choose a greeting using India Standard Time."""
+    now = now or datetime.now(IST)
+    hour = now.astimezone(IST).hour
+    if 5 <= hour < 12:
+        return "Good Morning"
+    if 12 <= hour < 17:
+        return "Good Afternoon"
+    if 17 <= hour < 21:
+        return "Good Evening"
+    return "Hello"
+
+
+def create_personal_greeting(user):
+    name = get_display_name(user)
+    greeting = get_time_greeting()
+    return f"👋 <b>{greeting}, {name}!</b>\n\nHow can I help you today? 😊"
+
+
 def create_welcome_post(user):
-    """Create a personalised welcome post."""
-    first_name = user.get("first_name") or ""
-    last_name = user.get("last_name") or ""
-    username = user.get("username")
-
-    full_name = f"{first_name.strip()} {last_name.strip()}".strip()
-
-    if full_name:
-        name = full_name
-    elif username:
-        name = f"@{username}"
-    else:
-        name = "there"
-
-    name = escape(name)
-
+    """Create a personalised welcome post for /start."""
+    name = get_display_name(user)
+    greeting = get_time_greeting()
     return (
-        f"👋 <b>Welcome, {name}! to your daily market companion! 🚀</b>\n\n"
+        f"👋 <b>{greeting}, {name}!</b> Welcome to your daily market companion! 🚀\n\n"
         "💰 <b>What you can explore:</b>\n"
         "🪙 Gold Price Updates\n"
         "💵 USD/INR Exchange Rate\n"
         "📈 BSE Sensex Updates\n"
         "🏦 Ujjivan Small Finance Bank Share Price\n"
-        "🤖 AI-Powered Market Insights\n\n"
+        "🤖 AI-powered answers and market insights\n\n"
+        "💬 Send <b>Hi</b> to get started or type your question."
     )
 
-def handle_telegram_update(update):
-    """Save/update Telegram user details when /start is received."""
 
-    message = update.get("message") or {}
-    text = message.get("text") or ""
-    chat = message.get("chat") or {}
-    user = message.get("from") or {}
-    chat_id = chat.get("id")
+_GREETING_MESSAGES = {
+    "hi", "hii", "hiii", "hello", "hey", "heyy", "helo",
+    "good morning", "good afternoon", "good evening", "good night",
+}
 
-    if not chat_id:
-        return
 
-    command = text.split()[0].split("@")[0] if text.strip() else ""
+def is_simple_greeting(text):
+    """Match greetings without accidentally swallowing real questions."""
+    cleaned = re.sub(r"[^a-z\s]", "", (text or "").lower()).strip()
+    return cleaned in _GREETING_MESSAGES
 
-    if command != "/start":
-        return
 
+def save_or_update_user(user, chat, is_start=False):
+    """Persist the sender's Telegram profile, keyed by Telegram user ID."""
     user_id = user.get("id")
-
-    if not user_id:
+    chat_id = chat.get("id")
+    if not user_id or not chat_id or user.get("is_bot", False):
         return
-
     now = datetime.now(IST)
-
-    # Save a new user or update the existing user's document.
-    # user_id is unique, so repeated /start commands won't
-    # create duplicate documents.
-    saved_user = users_collection.find_one_and_update(
-        {"user_id": user_id},
-        {
-            "$set": {
-                "username": user.get("username"),
-                "first_name": user.get("first_name"),
-                "last_name": user.get("last_name"),
-                "language_code": user.get("language_code"),
-                "is_bot": user.get("is_bot", False),
-                "chat_id": chat_id,
-                "chat_type": chat.get("type"),
-                "last_start_at": now,
-                "updated_at": now,
-            },
-            "$setOnInsert": {
-                "user_id": user_id,
-                "first_start_at": now,
-            },
-            "$inc": {
-                "start_count": 1,
-            },
+    update = {
+        "$set": {
+            "username": user.get("username"),
+            "first_name": user.get("first_name"),
+            "last_name": user.get("last_name"),
+            "language_code": user.get("language_code"),
+            "is_bot": user.get("is_bot", False),
+            "chat_id": chat_id,
+            "chat_type": chat.get("type"),
+            "updated_at": now,
         },
-        upsert=True,
+        "$setOnInsert": {"user_id": user_id, "first_start_at": now},
+    }
+    if is_start:
+        update["$set"]["last_start_at"] = now
+        update["$inc"] = {"start_count": 1}
+    users_collection.find_one_and_update(
+        {"user_id": user_id}, update, upsert=True,
         return_document=ReturnDocument.AFTER,
     )
 
-    # Send welcome message after the database operation succeeds.
-    welcome_post = create_welcome_post(user)
-    send_message(chat_id, welcome_post)
+
+def answer_with_ai(chat_id, message_text, message_id=None):
+    """Send a processing notice, ask Gemini, and reply to this same chat."""
+    send_message(
+        chat_id,
+        "⏳ <b>Please wait...</b>\nAI is preparing your answer.",
+        reply_to_message_id=message_id,
+    )
+    prompt = (
+        "You are a helpful assistant inside a Telegram bot. "
+        "Answer the user's question clearly, accurately, and concisely. "
+        "If you are unsure, say so instead of inventing facts.\n\n"
+        f"User's question:\n{message_text}"
+    )
+    answer = AI_Generated_Answer(prompt)
+    if not answer or not answer.strip():
+        answer = "⚠️ I couldn't generate an answer just now. Please try again."
+    safe_answer = escape(answer.strip())
+    send_message(chat_id, f"🤖 <b>Answer</b>\n\n{safe_answer}", reply_to_message_id=message_id)
+
+
+def handle_telegram_update(update):
+    """Handle /start, simple greetings, and AI questions from Telegram."""
+    message = update.get("message") or update.get("edited_message") or {}
+    text = (message.get("text") or "").strip()
+    chat = message.get("chat") or {}
+    user = message.get("from") or {}
+    chat_id = chat.get("id")
+    message_id = message.get("message_id")
+    if not chat_id or not user.get("id") or not text or user.get("is_bot", False):
+        return
+
+    command = text.split()[0].split("@")[0].lower()
+    save_or_update_user(user, chat, is_start=(command == "/start"))
+    if command == "/start":
+        send_message(chat_id, create_welcome_post(user), reply_to_message_id=message_id)
+        return
+    if command == "/help":
+        send_message(
+            chat_id,
+            "💬 Say <b>Hi</b> for a personalised greeting or send me a question.\n"
+            "📊 I can also help with market-related questions.",
+            reply_to_message_id=message_id,
+        )
+        return
+    if is_simple_greeting(text):
+        send_message(chat_id, create_personal_greeting(user), reply_to_message_id=message_id)
+        return
+
+    # Both processing and final answers use this incoming update's chat_id.
+    answer_with_ai(chat_id, text, message_id)
+
 
 def format_pre_market_post(data, user=None):
     """Format the morning market update as a personalised Telegram HTML post."""
