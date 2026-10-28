@@ -19,20 +19,24 @@ if not BOT_TOKEN:
 
 TELEGRAM_API = f"https://api.telegram.org/bot{BOT_TOKEN}"
 
-
 def send_message(chat_id, text, reply_to_message_id=None):
-    """Send a Telegram HTML message to the specified chat only."""
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
-    if reply_to_message_id is not None:
-        payload["reply_to_message_id"] = reply_to_message_id
-        payload["allow_sending_without_reply"] = True
-    response = requests.post(f"{TELEGRAM_API}/sendMessage", json=payload, timeout=20)
+    """Send a normal Telegram message without quoting the original."""
+    response = requests.post(
+        f"{TELEGRAM_API}/sendMessage",
+        json={
+            "chat_id": chat_id,
+            "text": text,
+            "parse_mode": "HTML"
+        },
+        timeout=20
+    )
     response.raise_for_status()
     result = response.json()
+
     if not result.get("ok"):
         raise RuntimeError("Telegram message could not be sent")
-    return result
 
+    return result
 
 def get_display_name(user):
     """Return the user's Telegram name, safely escaped for Telegram HTML."""
@@ -43,7 +47,6 @@ def get_display_name(user):
         username = (user.get("username") or "").strip()
         full_name = f"@{username}" if username else "there"
     return escape(full_name)
-
 
 def get_time_greeting(now=None):
     """Choose a greeting using India Standard Time."""
@@ -57,12 +60,10 @@ def get_time_greeting(now=None):
         return "Good Evening"
     return "Hello"
 
-
 def create_personal_greeting(user):
     name = get_display_name(user)
     greeting = get_time_greeting()
     return f"👋 <b>{greeting}, {name}!</b>\n\nHow can I help you today? 😊"
-
 
 def create_welcome_post(user):
     """Create a personalised welcome post for /start."""
@@ -79,18 +80,15 @@ def create_welcome_post(user):
         "💬 Send <b>Hi</b> to get started or type your question."
     )
 
-
 _GREETING_MESSAGES = {
     "hi", "hii", "hiii", "hello", "hey", "heyy", "helo",
     "good morning", "good afternoon", "good evening", "good night",
 }
 
-
 def is_simple_greeting(text):
     """Match greetings without accidentally swallowing real questions."""
     cleaned = re.sub(r"[^a-z\s]", "", (text or "").lower()).strip()
     return cleaned in _GREETING_MESSAGES
-
 
 def save_or_update_user(user, chat, is_start=False):
     """Persist the sender's Telegram profile, keyed by Telegram user ID."""
@@ -120,7 +118,6 @@ def save_or_update_user(user, chat, is_start=False):
         return_document=ReturnDocument.AFTER,
     )
 
-
 def answer_with_ai(chat_id, message_text, message_id=None):
     """Send a processing notice, ask Gemini, and reply to this same chat."""
     send_message(
@@ -139,7 +136,6 @@ def answer_with_ai(chat_id, message_text, message_id=None):
         answer = "⚠️ I couldn't generate an answer just now. Please try again."
     safe_answer = escape(answer.strip())
     send_message(chat_id, f"🤖 <b>Answer</b>\n\n{safe_answer}", reply_to_message_id=message_id)
-
 
 def handle_telegram_update(update):
     """Handle /start, simple greetings, and AI questions from Telegram."""
@@ -171,7 +167,6 @@ def handle_telegram_update(update):
 
     # Both processing and final answers use this incoming update's chat_id.
     answer_with_ai(chat_id, text, message_id)
-
 
 def format_pre_market_post(data, user=None):
     """Format the morning market update as a personalised Telegram HTML post."""
@@ -216,7 +211,7 @@ def format_pre_market_post(data, user=None):
     ).astimezone(IST).strftime("%d %b %Y | %I:%M %p IST")
 
     return (
-        f"<b>🌅 Good Morning, {safe_name}!</b> 👋 | 📊 Your Daily Market Update for {generated_at} — Stay Informed, Stay Ahead! 🚀\n\n"
+        f"<b>🌅 Good Morning {safe_name}</b>, Your Daily Market Update for {generated_at} — Stay Informed, Stay Ahead! 🚀\n\n"
 
         "🪙 <b>GOLD</b>\n"
         f"Price per 10gm: {number(gold, 'price_after_import_duty_per_10g', prefix='₹')}\n"
