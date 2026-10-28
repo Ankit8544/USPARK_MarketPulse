@@ -216,8 +216,7 @@ def format_pre_market_post(data, user=None):
     ).astimezone(IST).strftime("%d %b %Y | %I:%M %p IST")
 
     return (
-        f"🌅 <b>Good Morning, {safe_name}!</b> 👋\n"
-        f"📊 <b>DAILY MARKET UPDATE</b> | {generated_at}\n\n"
+        f"<b>🌅 Good Morning, {safe_name}!</b> 👋 | 📊 Your Daily Market Update for {generated_at} — Stay Informed, Stay Ahead! 🚀\n\n"
 
         "🪙 <b>GOLD</b>\n"
         f"Price per 10gm: {number(gold, 'price_after_import_duty_per_10g', prefix='₹')}\n"

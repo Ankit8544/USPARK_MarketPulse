@@ -1,4 +1,3 @@
-
 import os
 import logging
 from pathlib import Path
@@ -49,8 +48,8 @@ scheduler = BackgroundScheduler(
 scheduler.add_job(
     func=run_pre_market_job,
     trigger="cron",
-    hour=21,
-    minute=30,
+    hour=22,
+    minute=15,
     id="pre_market_brief",
     replace_existing=True,
     misfire_grace_time=3600,
