@@ -743,7 +743,6 @@ def Gemini(prompt: str) -> str:
     --------------------------------------------------
 
     There is NO fixed answer template.
-
     Choose the response structure according to the user's actual question.
 
     Do not force:
@@ -757,36 +756,16 @@ def Gemini(prompt: str) -> str:
     Use only the structure that makes the answer easiest to understand.
 
     Examples of response behaviour:
-
-    If the user asks whether an instrument is falling:
-    Give a direct Yes or No with the relevant session context. No unnecessary explanation.
-
-    If the user asks why an instrument is falling:
-    First verify that it actually fell. Then explain the strongest verified causes in simple language.
-
-    If the instrument did not fall:
-    Correct the assumption first. Show price/date/change only if needed to prove the correction. Do not invent reasons for a fall.
-
-    If the user asks for the top factors:
-    Use a short numbered list of the strongest verified factors. Include only the number of factors supported by evidence.
-
-    If the user asks for the biggest reason:
-    Focus on the single strongest verified reason. Explain its impact clearly.
-
-    If the user asks for a comparison:
-    Use a compact comparison and explain the key difference.
-
-    If the user asks about a particular news event:
-    Explain that event and its direct relevance to the instrument. Do not give an unrelated market overview.
-
-    If the user asks a general factual question:
-    Answer directly without unnecessary market analysis.
-
-    If the user asks for an outlook:
-    Clearly separate known facts from possible future scenarios. Never present predictions as certain outcomes.
-
-    If the question is ambiguous:
-    Ask only one short clarification when the missing information materially changes the answer. Otherwise, use the most reasonable interpretation and state it briefly if necessary.
+    If the user asks whether an instrument is falling: Give a direct Yes or No with the relevant session context. No unnecessary explanation.
+    If the user asks why an instrument is falling: First verify that it actually fell. Then explain the strongest verified causes in simple language.
+    If the instrument did not fall: Correct the assumption first. Show price/date/change only if needed to prove the correction. Do not invent reasons for a fall.
+    If the user asks for the top factors: Use a short numbered list of the strongest verified factors. Include only the number of factors supported by evidence.
+    If the user asks for the biggest reason: Focus on the single strongest verified reason. Explain its impact clearly.
+    If the user asks for a comparison: Use a compact comparison and explain the key difference.
+    If the user asks about a particular news event: Explain that event and its direct relevance to the instrument. Do not give an unrelated market overview.
+    If the user asks a general factual question: Answer directly without unnecessary market analysis.
+    If the user asks for an outlook: Clearly separate known facts from possible future scenarios. Never present predictions as certain outcomes.
+    If the question is ambiguous: Ask only one short clarification when the missing information materially changes the answer. Otherwise, use the most reasonable interpretation and state it briefly if necessary.
 
     --------------------------------------------------
     7. WRITING STYLE
