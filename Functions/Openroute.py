@@ -1,7 +1,7 @@
 from dotenv import load_dotenv
 import os
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import requests
 import re
@@ -29,34 +29,26 @@ TAVILY_URL = "https://api.tavily.com/search"
 
 
 def _tavily_market_research(prompt: str, symbol: str = None) -> str:
-    """
-    Deep, date-aware research for stock-movement questions.
-    Yahoo Finance remains the quote source; Tavily independently researches catalysts.
-    """
+    """Research dated real-world catalysts; never use quote/price movement as causal evidence."""
     api_key = os.getenv("TAVILY_API_KEY", "").strip()
     if not api_key:
         return "NEWS_RESEARCH_UNAVAILABLE: TAVILY_API_KEY is not configured."
 
     now = datetime.now(ZoneInfo("Asia/Kolkata"))
     today = now.strftime("%d %B %Y")
-    company = "Ujjivan Small Finance Bank" if symbol == "UJJIVANSFB.NS" or "ujjivan" in prompt.lower() else "the company named in the user's question"
+    start_date = (now - timedelta(days=7)).strftime("%d %B %Y")
+    company = "Ujjivan Small Finance Bank" if symbol == "UJJIVANSFB.NS" or "ujjivan" in prompt.lower() else "the company or market named in the user's question"
 
     queries = [
-        # Direct company/stock catalysts and exchange disclosures
-        f'"{company}" share price fall decline latest news analyst concerns {today}',
-        f'"{company}" latest exchange filing NSE BSE corporate announcement results guidance slippages credit cost deposits NPA {today}',
-        # Sector and peer context to separate company-specific moves from sector moves
-        f'India small finance banks latest news sector performance peer stocks Ujjivan AU Equitas Jana Utkarsh {today}',
-        # Indian macro / flows
-        f'India stock market latest FII DII flows RBI policy liquidity banking stocks bond yields rupee crude oil {today}',
-        # Global macro channels that can affect Indian financials
-        f'global markets latest US Federal Reserve Treasury yields US dollar crude oil geopolitical risk emerging markets capital flows India {today}',
-        # Look for actual contemporaneous catalyst, not generic market commentary
-        f'why {company} stock underperformed Indian banking index and peers recent trading sessions news',
+        f"India economic and financial news {start_date} to {today}: RBI policy liquidity inflation bond yields rupee crude oil FII flows",
+        f"global macroeconomic events {start_date} to {today}: US Federal Reserve Treasury yields dollar oil geopolitical developments emerging markets",
+        f"India stock market catalysts {start_date} to {today}: corporate earnings policy announcements sector developments institutional flows",
+        f"latest official economic releases and central bank decisions India US Europe Japan {start_date} to {today}",
+        f"{company} latest official announcements earnings guidance regulatory news sector developments {start_date} to {today}",
+        f"Indian banking and financial sector developments {start_date} to {today}: credit growth deposits asset quality funding costs RBI",
     ]
 
-    results = []
-    seen_urls = set()
+    results, seen_urls = [], set()
     for index, query in enumerate(queries):
         try:
             response = requests.post(
@@ -66,16 +58,15 @@ def _tavily_market_research(prompt: str, symbol: str = None) -> str:
                     "query": query,
                     "topic": "news",
                     "search_depth": "advanced",
-                    "max_results": 6,
+                    "max_results": 7,
                     "include_answer": False,
                     "include_raw_content": False,
-                    "time_range": "month",
+                    "time_range": "week",
                 },
                 timeout=(8, 25),
             )
             response.raise_for_status()
             data = response.json()
-
             for item in data.get("results", []):
                 title = (item.get("title") or "").strip()
                 content = (item.get("content") or "").strip()
@@ -87,22 +78,19 @@ def _tavily_market_research(prompt: str, symbol: str = None) -> str:
                     seen_urls.add(url)
                 if title or content:
                     results.append(
-                        f"Research query: {query}\n"
-                        f"Headline: {title}\nPublished: {published}\n"
+                        f"Search: {query}\nHeadline: {title}\nPublished: {published}\n"
                         f"URL: {url}\nEvidence: {content}"
                     )
         except (requests.RequestException, ValueError, TypeError) as exc:
             logger.warning("Market news search %s failed: %s", index + 1, exc)
 
     if not results:
-        return (
-            "NO_RECENT_NEWS_RESULTS: No usable recent news results were returned. "
-            "Do not invent catalysts; state that the reason cannot be verified."
-        )
+        return "NO_RECENT_NEWS_RESULTS: No reliable current-week news found. Do not invent reasons."
     return (
-        f"Research date: {today} (India). Search window: latest one month.\n\n"
-        + "\n\n---\n\n".join(results[:30])
-    )[:26000]
+        f"Research date: {today} IST. Strict event window: {start_date} to {today}.\n"
+        "Use only events in this window as current catalysts. Older events are background only.\n\n"
+        + "\n\n---\n\n".join(results[:35])
+    )[:30000]
 
 YAHOO_TICKERS = {
     "ujjivan": "UJJIVANSFB.NS",
@@ -397,6 +385,13 @@ def Gemini(prompt: str) -> str:
 You are USPARK MarketPulse, a rigorous equity-research analyst focused on Indian stocks and global macro events.
 Current date/time in India: {current_dt.strftime("%d %B %Y, %I:%M %p IST")}.
 
+MARKET SESSION / AS-OF RULES:
+- Determine the current India date and weekday. NSE/BSE equity trading is normally Monday-Friday, 09:15-15:30 IST, excluding exchange holidays.
+- If today is Saturday, Sunday or an exchange holiday, say the latest completed session date in the heading/context; never describe a closed-market day as "today's movement".
+- For Sunday 1 November 2026, the latest regular NSE/BSE session is Friday 30 October 2026. Use 30 October as the latest completed session, not stale dates from earlier weeks.
+- Do not use old stories (for example, 21 October) as fresh catalysts for 30 October unless a new development occurred in the current event window and is explicitly evidenced.
+- A market is not moving just because a quote changed. Explain the underlying real-world event and its transmission mechanism.
+
 RESEARCH METHOD:
 1. Establish the exact stock, direction and relevant trading sessions using Yahoo Finance data privately.
 2. Research the same event window using the supplied independent news results. Prioritise the most recent, date-matched evidence.
@@ -409,6 +404,11 @@ RESEARCH METHOD:
 6. Explain the transmission mechanism in plain language: how the event can affect the bank's earnings, credit risk, funding cost, valuation or investor demand.
 
 EVIDENCE RULES:
+- For index/FX/commodity questions, investigate real-world drivers first: central-bank decisions, official economic data, fiscal/policy announcements, geopolitical developments, energy/supply disruptions, trade actions, company earnings and verified institutional flows.
+- Yahoo Finance/quote feeds may establish only the latest available instrument and session context. NEVER use price candles, technical indicators, index points, percentage moves, volume or quote history as an explanation for why an instrument moved.
+- Do not present a company's stock price performance, a market index fall, or futures movement as the underlying cause. These are outcomes/market observations, not causal events.
+- For a "top factors influencing" question, each point must identify a real-world event/development and explain its economic transmission channel. If only one or two catalysts are verified, say so instead of padding the list.
+- Always state the event date (not merely the article publication date) when available. Reject stale event dates outside the requested/latest-session window unless clearly labelled as background.
 - Yahoo Finance is ONLY the private source for quote/ticker/trading-date context. It is NOT a source of causal explanations.
 - Use the independent research results for news and events. Do not rely on Yahoo quote movement as proof of a cause.
 - Give priority to company/exchange/regulator announcements and reputable financial news. Treat opinion pieces and technical commentary as weaker evidence.
@@ -424,7 +424,7 @@ EVIDENCE RULES:
 
 STOCK-MOVEMENT ANSWER FORMAT:
 - NEVER repeat, quote, paraphrase or print the user's question.
-- Start directly with: **Top 3 factors**
+- Start directly with: *Top 3 factors* (single asterisks only for Telegram Markdown)
 - Give exactly 3 numbered points, each one short sentence (maximum 18 words).
 - Each point must name a specific, dated event/factor and its direct market impact.
 - After the three points, add exactly one short line: **Biggest impact:** [single strongest evidence-supported factor].
@@ -442,7 +442,7 @@ OTHER ANSWERS:
     user_content = (
         f"User's exact question:\n{prompt}\n\n"
         f"Recent research results:\n{search_data}\n\n"
-        "Answer only the exact question, follow the required short format, and do not display sources or URLs."
+        "Answer only the requested market analysis. Do not repeat the question. Use the exact compact 3-point format. Explain real-world events, never quote/price movements. Do not display sources or URLs."
     )
 
     payload = {
@@ -479,16 +479,19 @@ OTHER ANSWERS:
                     prompt_lower = (prompt or "").lower()
                     is_reason_prompt = any(
                         term in prompt_lower
-                        for term in ("why", "reason", "fall", "fell", "down", "declin", "drop", "plunge")
+                        for term in (
+                            "why", "reason", "fall", "fell", "down", "declin", "drop", "plunge",
+                            "factor", "influenc", "impact", "driver", "cause", "what is moving",
+                            "what's moving", "market movement"
+                        )
                     )
                     if market_question and is_reason_prompt:
                         answer = _format_stock_reason_answer(answer)
-                        if answer:
-                            pass
                         if not answer:
                             answer = (
-                                "**Why the stock is falling**\n"
-                                "1. Available recent evidence does not establish a confirmed reason for the move."
+                                "*Top 3 factors*\\n"
+                                "1. Recent reliable evidence is insufficient to identify three confirmed market drivers.\\n"
+                                "*Biggest impact:* Not conclusively identifiable from available evidence."
                             )
                     # Enforce the no-sources preference even if the model adds a source footer.
                     answer = re.sub(
