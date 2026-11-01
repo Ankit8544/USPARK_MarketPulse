@@ -88,6 +88,7 @@ def health():
 @app.post("/telegram-webhook")
 def telegram_webhook():
     update = request.get_json(silent=True)
+    print("Received Telegram update:", update)
 
     if not isinstance(update, dict):
         return jsonify({
