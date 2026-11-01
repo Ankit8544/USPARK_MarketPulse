@@ -153,9 +153,14 @@ def _is_market_impact_question(prompt: str) -> bool:
 
 def _resolve_yahoo_ticker(prompt: str):
     text = (prompt or "").lower()
+
     if "ujjivan" in text:
+        if re.search(r"\b(bse|bombay)\b", text):
+            return "UJJIVANSFB.BO"
         return "UJJIVANSFB.NS"
+
     if "nifty" in text:
+        # Nifty 50 is an NSE index; there is no BSE Nifty 50 index.
         return "^NSEI"
     if "sensex" in text:
         return "^BSESN"
@@ -363,47 +368,140 @@ def yahoo_research(prompt: str) -> str:
     return "\n\n".join(parts)[:22000]
 
 
-def _market_status_header(prompt: str, market_context: str) -> str:
-    """Build a verified status line from the Yahoo Finance quote included in market_context."""
+def _market_status_header(prompt: str, market_context: str, include_quote_details: bool = False) -> str:
+    """Build a verified, price-free status line unless a false premise needs correcting."""
     symbol = _resolve_yahoo_ticker(prompt)
     if not symbol:
-        return "MARKET STATUS: Latest verified quote unavailable."
+        return "MARKET STATUS: Latest verified data unavailable."
 
     price_match = re.search(r"Latest available Yahoo Finance price:\s*([0-9]+(?:\.[0-9]+)?)", market_context)
     date_match = re.search(r"Yahoo Finance quote/trading date:\s*([^\n]+)", market_context)
     change_match = re.search(r"Change percent:\s*(-?[0-9]+(?:\.[0-9]+)?)", market_context)
 
     labels = {
-        "^NSEI": "NIFTY 50",
-        "^BSESN": "SENSEX",
+        "^NSEI": "NIFTY 50 (NSE)",
+        "^BSESN": "SENSEX (BSE)",
         "USDINR=X": "USD/INR",
-        "GC=F": "GOLD",
-        "SI=F": "SILVER",
+        "GC=F": "GOLD (GLOBAL FUTURES)",
+        "SI=F": "SILVER (GLOBAL FUTURES)",
         "UJJIVANSFB.NS": "UJJIVAN SFB (NSE)",
         "UJJIVANSFB.BO": "UJJIVAN SFB (BSE)",
     }
     label = labels.get(symbol, symbol)
 
     if not date_match or not price_match or not change_match:
-        return f"{label} — LATEST MARKET STATUS UNAVAILABLE"
+        return f"{label} — LATEST STATUS UNAVAILABLE"
 
     quote_date = date_match.group(1).strip()
     price = float(price_match.group(1))
     change_pct = float(change_match.group(1))
 
     if change_pct > 0.005:
-        direction = "CLOSED HIGHER"
+        direction = "HIGHER"
     elif change_pct < -0.005:
-        direction = "CLOSED LOWER"
+        direction = "LOWER"
     else:
-        direction = "CLOSED FLAT"
+        direction = "FLAT"
 
-    return (
-        f"{label} — {direction}\n"
-        f"Latest session: {quote_date} | Close/last quote: {price:,.2f} | "
-        f"Change: {change_pct:+.2f}%"
-    )
+    status = f"{label} — {direction}\nLatest session: {quote_date}"
+    if include_quote_details:
+        if symbol in ("GC=F", "SI=F"):
+            unit = "USD per troy ounce"
+        elif symbol == "USDINR=X":
+            unit = "INR per USD"
+        else:
+            unit = "index points" if symbol in ("^NSEI", "^BSESN") else "INR per share"
+        status += f"\nLast close: {price:,.2f} ({unit}) | Change: {change_pct:+.2f}%"
+    return status
 
+
+
+def _requested_market_direction(prompt: str):
+    """Return the direction explicitly assumed or asked about by the user."""
+    text = (prompt or "").lower()
+    if re.search(r"\\b(up\\s+or\\s+down|down\\s+or\\s+up|rise\\s+or\\s+fall|fall\\s+or\\s+rise|green\\s+or\\s+red|red\\s+or\\s+green)\\b", text):
+        return None
+    if re.search(r"\b(fall|falling|fell|fallen|down|declin(?:e|ing|ed)?|drop(?:ping|ped)?|crash(?:ing|ed)?)\b", text):
+        return "down"
+    if re.search(r"\b(ris(?:e|ing)|rose|rising|up|gain(?:ing|ed)?|surge(?:d|ing)?)\b", text):
+        return "up"
+    return None
+
+
+def _is_status_only_question(prompt: str) -> bool:
+    """Detect direct direction/status questions that do not ask for reasons."""
+    text = (prompt or "").lower().strip()
+    asks_status = bool(re.search(
+        r"\b(is|are|was|were|has|have|did|does|do)\b", text
+    )) and bool(re.search(
+        r"\b(fall|falling|fell|down|rise|rising|up|gain|gaining|flat|positive|negative|green|red|market status)\b",
+        text
+    ))
+    asks_reason = bool(re.search(
+        r"\b(why|reason|cause|factor|driver|because|what made|what caused)\b", text
+    ))
+    return asks_status and not asks_reason
+
+
+def _build_intent_aware_market_reply(prompt: str, market_context: str, generated_answer: str = "") -> str:
+    """Never explain a move that did not happen; answer status questions without unrelated factors."""
+    header = _market_status_header(prompt, market_context)
+    if "LATEST STATUS UNAVAILABLE" in header or "Latest verified data unavailable" in header:
+        return (
+            header + "\n"
+            "I can't confirm the market direction from fresh Yahoo Finance data, so I won't guess the reason."
+        )
+
+    down_match = re.search(r"Change percent:\s*([+-]?[0-9]+(?:\.[0-9]+)?)", market_context)
+    if not down_match:
+        return header + "\nLatest market direction could not be verified."
+
+    change_pct = float(down_match.group(1))
+    actual_direction = "down" if change_pct < -0.005 else ("up" if change_pct > 0.005 else "flat")
+    requested_direction = _requested_market_direction(prompt)
+
+    if _is_status_only_question(prompt):
+        if requested_direction == "down":
+            if actual_direction == "down":
+                return header + "\nYes. It is lower in the latest completed session."
+            detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
+            if actual_direction == "up":
+                return detailed_header + "\nNo. It did not fall; it closed higher in the latest completed session."
+            return detailed_header + "\nNo. It was nearly unchanged in the latest completed session."
+        if requested_direction == "up":
+            if actual_direction == "up":
+                return header + "\nYes. It closed higher in the latest completed session."
+            detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
+            if actual_direction == "down":
+                return detailed_header + "\nNo. It closed lower in the latest completed session."
+            return detailed_header + "\nIt was nearly unchanged in the latest completed session."
+        return header
+
+    if requested_direction == "down" and actual_direction != "down":
+        detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
+        if actual_direction == "up":
+            correction = "It did not fall in the latest completed session; it closed higher."
+        else:
+            correction = "It was nearly flat in the latest completed session, not meaningfully lower."
+        return detailed_header + "\n" + correction + " So there is no fall to explain for that session."
+
+    if requested_direction == "up" and actual_direction != "up":
+        detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
+        if actual_direction == "down":
+            correction = "It did not rise in the latest completed session; it closed lower."
+        else:
+            correction = "It was nearly flat in the latest completed session."
+        return detailed_header + "\n" + correction + " So there is no rise to explain for that session."
+
+    formatted = _format_stock_reason_answer(generated_answer, prompt, market_context)
+    if not formatted:
+        return header + "\nVerified news evidence is not strong enough to identify the reasons."
+    # Formatter already includes a status heading; retain the intent-checked header only once.
+    marker = "\n\nWHY THE MARKET MOVED"
+    if marker in formatted:
+        formatted = formatted.split(marker, 1)[1]
+        return header + marker + formatted
+    return header + "\n" + formatted
 
 def _format_stock_reason_answer(answer: str, prompt: str = "", market_context: str = "") -> str:
     """Format status first, then concise evidence-led factors in basic English."""
@@ -467,6 +565,13 @@ def Gemini(prompt: str) -> str:
 
     system_prompt = f"""
 You are USPARK MarketPulse, a rigorous equity-research analyst focused on Indian stocks and global macro events.
+SUPPORTED INSTRUMENTS:
+- Nifty 50 (NSE index; if user says "BSE Nifty", understand they mean Nifty 50 but label it correctly as NSE).
+- BSE Sensex.
+- Gold and silver (Yahoo symbols GC=F and SI=F are global futures quoted in USD per troy ounce; do not describe them as Indian retail INR prices).
+- Ujjivan Small Finance Bank NSE listing (UJJIVANSFB.NS).
+- Ujjivan Small Finance Bank BSE listing (UJJIVANSFB.BO). Select the exchange explicitly named by the user; default to NSE only when no exchange is specified.
+
 Current date/time in India: {current_dt.strftime("%d %B %Y, %I:%M %p IST")}.
 
 MARKET SESSION / AS-OF RULES:
@@ -513,7 +618,9 @@ EVIDENCE RULES:
 
 STOCK-MOVEMENT ANSWER FORMAT:
 - NEVER repeat, quote, paraphrase or print the user's question.
-- The application adds a verified MARKET STATUS header from Yahoo Finance before your answer. Do not create, guess or repeat any price, date, percentage or market direction.
+- The application independently checks the user's requested direction against Yahoo Finance before displaying your answer.
+- Do not create, guess or repeat any price, date, percentage or market direction.
+- Only provide factors for the move that actually happened. If the app detects that the user's assumed direction is wrong, it will correct the premise and suppress your factors.
 - After the status header, write exactly: WHY THE MARKET MOVED
 - Give up to 3 numbered points in very basic, natural English. Each point should be one or two short sentences, maximum 24 words total.
 - First explain the strongest factors that match the actual direction. If the index rose, explain what supported the rise and mention major headwinds only if relevant. If it fell, explain what caused the pressure. If flat, explain the balance of positive and negative forces.
@@ -521,7 +628,7 @@ STOCK-MOVEMENT ANSWER FORMAT:
 - After the points, add exactly one short line: Biggest impact: [single strongest evidence-supported factor].
 - If the strongest factor cannot be established, write: **Biggest impact:** Not conclusively identifiable from available evidence.
 - Do not add "Based on the provided research", an introduction, conclusion, background paragraph or source list.
-- Do not repeat price, percentage, quote timestamp, high/low or volume in the factor explanations; the app supplies the verified status header.
+- Do not show price, percentage, quote values, high/low or volume in normal answers. Only show the close and percentage when correcting a wrong assumed direction; then include the date and correct unit.
 - Keep the entire answer under 90 words.
 - Use plain text only. Do not output asterisks, Markdown, HTML tags or literal \\n sequences.
 
@@ -577,12 +684,9 @@ OTHER ANSWERS:
                         )
                     )
                     if market_question and is_reason_prompt:
-                        answer = _format_stock_reason_answer(answer, prompt, search_data)
-                        if not answer:
-                            answer = (
-                                "1. Recent reliable evidence is insufficient to identify a confirmed market driver.\n"
-                                "Biggest impact: Not conclusively identifiable from available evidence."
-                            )
+                        answer = _build_intent_aware_market_reply(prompt, search_data, answer)
+                    elif market_question and _is_status_only_question(prompt):
+                        answer = _build_intent_aware_market_reply(prompt, search_data, answer)
                     # Enforce the no-sources preference even if the model adds a source footer.
                     answer = re.sub(
                         r"(?is)\n*\s*(sources?|references?|citations?)\s*:\s*.*$",
