@@ -584,6 +584,13 @@ def Gemini(prompt: str) -> str:
             Do not use complicated financial language when simple English works.
             Do not repeat the same factor in different words.
             Do not add irrelevant information just to make the answer longer.
+            Answer format must depend on the user's question:
+                - For reason-based questions, give 3–4 short, relevant numbered points.
+                - Each point must be a single concise sentence.
+                - For simple status or yes/no questions, answer in one short sentence.
+                - For general questions, use only the format needed to answer them.
+                - Never use asterisks (*) or decorative Markdown formatting.
+                - Never force 3–4 points when the user has not asked for reasons.
 
         6. OUTPUT AND FORMATTING RULES
             Use simple, natural English.
