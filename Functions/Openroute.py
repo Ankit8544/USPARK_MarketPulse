@@ -577,7 +577,7 @@ def Gemini(prompt: str) -> str:
             Sound like a knowledgeable human market analyst, not an automated news summary.
             Explain financial terms in easy language when necessary.
             Be direct, specific and informative.
-            Keep answers concise, but include enough explanation to make the reasoning clear.
+            Respond in exactly ONE short sentence, preferably under 20 words. Never use bullets, numbered lists, headings or multiple paragraphs.
             Avoid generic statements such as "investors are cautious" unless supported by evidence.
             Avoid repeating the user's question.
             Avoid unnecessary introductions, conclusions and filler.
@@ -619,7 +619,7 @@ def Gemini(prompt: str) -> str:
             {"role": "user", "content": user_content},
         ],
         "temperature": 0.1,
-        "max_tokens": 550 if market_question else 300,
+        "max_tokens": 100,
     }
 
     last_error = "Unknown OpenRouter error"
@@ -663,6 +663,8 @@ def Gemini(prompt: str) -> str:
                         answer,
                     ).strip()
                     answer = re.sub(r"https?://\S+", "", answer).strip()
+                    answer = answer.replace("*", "")
+                    answer = re.sub(r"\s+", " ", answer).strip()
                     return answer or "⚠️ I couldn't find enough verified information to answer."
                 last_error = "OpenRouter returned an empty answer."
                 continue
