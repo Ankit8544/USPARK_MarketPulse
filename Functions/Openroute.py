@@ -39,7 +39,45 @@ def _tavily_market_research(prompt: str, symbol: str = None) -> str:
     start_date = (now - timedelta(days=7)).strftime("%d %B %Y")
     company = "Ujjivan Small Finance Bank" if symbol == "UJJIVANSFB.NS" or "ujjivan" in prompt.lower() else "the company or market named in the user's question"
 
-    queries = [
+    prompt_lower = (prompt or "").lower()
+    if "nifty" in prompt_lower:
+        focus_queries = [
+            f"Nifty 50 latest completed trading session {today} market drivers sector contribution heavyweight stocks earnings",
+            f"Nifty 50 October 30 2026 why market rose or fell IT stocks corporate earnings crude oil FII",
+            f"India stock market latest seven days Nifty 50 sector rotation banking IT energy financials corporate results",
+        ]
+    elif "sensex" in prompt_lower:
+        focus_queries = [
+            f"BSE Sensex latest completed trading session {today} market drivers top constituent contributions earnings",
+            f"Sensex October 30 2026 market drivers sector performance crude oil FII corporate earnings",
+            f"India large cap stocks latest seven days sector news earnings policy developments",
+        ]
+    elif "usd" in prompt_lower or "inr" in prompt_lower or "rupee" in prompt_lower:
+        focus_queries = [
+            f"USD INR rupee latest seven days actual drivers RBI intervention dollar index US yields crude oil FPI flows",
+            f"India rupee currency market latest official RBI forex policy trade balance oil prices",
+            f"US dollar latest seven days Fed data Treasury yields currency markets",
+        ]
+    elif "gold" in prompt_lower or "silver" in prompt_lower:
+        asset = "gold silver precious metals" if "gold" in prompt_lower and "silver" in prompt_lower else ("gold" if "gold" in prompt_lower else "silver")
+        focus_queries = [
+            f"{asset} latest seven days actual market drivers US real yields dollar central bank purchases ETF flows industrial demand",
+            f"international {asset} market news latest week supply demand geopolitical central bank",
+            f"India {asset} prices import duty rupee MCX latest week drivers",
+        ]
+    elif "ujjivan" in prompt_lower:
+        focus_queries = [
+            f"Ujjivan Small Finance Bank latest seven days NSE BSE official announcements results management asset quality credit cost",
+            f"Ujjivan Small Finance Bank latest news October 30 2026 stock underperformance small finance bank peers",
+            f"India small finance bank sector latest week RBI regulation credit growth deposits slippages funding costs",
+        ]
+    else:
+        focus_queries = [
+            f"India financial markets latest seven days verified market-moving economic events policy data earnings",
+            f"global markets latest seven days verified macroeconomic events central bank decisions commodities geopolitical risks",
+        ]
+
+    queries = focus_queries + [
         f"India economic and financial news {start_date} to {today}: RBI policy liquidity inflation bond yields rupee crude oil FII flows",
         f"global macroeconomic events {start_date} to {today}: US Federal Reserve Treasury yields dollar oil geopolitical developments emerging markets",
         f"India stock market catalysts {start_date} to {today}: corporate earnings policy announcements sector developments institutional flows",
@@ -317,32 +355,29 @@ def yahoo_research(prompt: str) -> str:
 
 
 def _format_stock_reason_answer(answer: str) -> str:
-    """Return only three concise catalyst points and one strongest-impact line."""
-    lines = [line.strip() for line in (answer or "").splitlines() if line.strip()]
-    points = []
-    strongest = None
-    current = None
+    """Return plain-text Telegram formatting with real line breaks."""
+    text = (answer or "").replace("\r\n", "\n").replace("\\n", "\n")
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    points, strongest, current = [], None, None
 
     for line in lines:
-        # Ignore echoed questions, generic introductions, and source footers.
-        if line.startswith(("**", "__")) and ("?" in line or len(line) > 120):
+        line = re.sub(r"[*_`]", "", line).strip()
+        if "?" in line:
             continue
         if re.match(r"(?i)^(based on|currently influenced|the following|here are|sources?|references?|citations?)", line):
             continue
-
-        impact = re.match(r"(?i)^\**\s*(?:biggest impact|strongest impact)\s*:\**\s*(.*)$", line)
+        impact = re.match(r"(?i)^(?:biggest impact|strongest impact)\s*:\s*(.*)$", line)
         if impact:
             if current:
                 points.append(current)
                 current = None
             strongest = impact.group(1).strip()
             continue
-
-        match = re.match(r"^\s*(\d+)[.)]\s*(.+)$", line)
+        match = re.match(r"^\s*\d+[.)]\s*(.+)$", line)
         if match:
             if current:
                 points.append(current)
-            current = match.group(2).strip()
+            current = match.group(1).strip()
         elif current:
             current += " " + line
 
@@ -351,9 +386,8 @@ def _format_stock_reason_answer(answer: str) -> str:
 
     cleaned = []
     for point in points:
-        point = re.sub(r"[*_`]", "", point).strip()
-        point = re.sub(r"https?://\\S+", "", point).strip()
-        if re.search(r"(?i)(₹|\\bINR\\b|\\bRs\\.?\\s*\\d|share price is|stock price is|trading at|quoted at|previous close|volume:|\\bhigh:|\\blow:)", point):
+        point = re.sub(r"https?://\S+", "", point).strip()
+        if re.search(r"(?i)(₹|\bINR\b|\bRs\.?\s*\d|share price is|stock price is|trading at|quoted at|previous close|volume:|\bhigh:|\blow:)", point):
             continue
         if point:
             cleaned.append(point)
@@ -361,15 +395,12 @@ def _format_stock_reason_answer(answer: str) -> str:
     cleaned = cleaned[:3]
     if not cleaned:
         return ""
-
-    output = ["*Top 3 factors*"]
+    output = ["TOP 3 FACTORS"]
     output.extend(f"{i}. {point}" for i, point in enumerate(cleaned, 1))
-    if strongest:
-        strongest = re.sub(r"[*_`]", "", strongest).strip()
-        output.append(f"*Biggest impact:* {strongest}")
-    else:
-        output.append("*Biggest impact:* Not conclusively identifiable from available evidence.")
-    return "\\n".join(output)
+    output.append("BIGGEST IMPACT: " + (
+        strongest if strongest else "Not conclusively identifiable from the available evidence."
+    ))
+    return "\n".join(output)
 
 def Gemini(prompt: str) -> str:
     """Generate concise, evidence-led answers using current web research."""
@@ -405,6 +436,11 @@ RESEARCH METHOD:
 
 EVIDENCE RULES:
 - For index/FX/commodity questions, investigate real-world drivers first: central-bank decisions, official economic data, fiscal/policy announcements, geopolitical developments, energy/supply disruptions, trade actions, company earnings and verified institutional flows.
+- Match every catalyst to the exact instrument asked about. For Nifty 50, investigate index-weighted constituent earnings/news, sector contributions, RBI/macro policy, FII/DII flows and global spillovers; do not give generic USD/INR explanations unless they materially affected equities.
+- Never infer FII inflows from an IPO listing or IPO share-price rise. IPO subscription/listing activity is not proof of foreign portfolio flows.
+- Never claim a Fed rate hike is expected, crude is elevated, or institutional flows changed unless current dated research explicitly verifies it.
+- For Nifty/Sensex, identify the latest completed Indian trading session and explain that session's actual drivers. Do not reuse a prior week's news as the cause of the latest session.
+- For "currently influencing" questions, do not force three items: if fewer than three distinct real-world drivers are supported, return only the supported ones and state that evidence is limited.
 - Yahoo Finance/quote feeds may establish only the latest available instrument and session context. NEVER use price candles, technical indicators, index points, percentage moves, volume or quote history as an explanation for why an instrument moved.
 - Do not present a company's stock price performance, a market index fall, or futures movement as the underlying cause. These are outcomes/market observations, not causal events.
 - For a "top factors influencing" question, each point must identify a real-world event/development and explain its economic transmission channel. If only one or two catalysts are verified, say so instead of padding the list.
@@ -424,7 +460,7 @@ EVIDENCE RULES:
 
 STOCK-MOVEMENT ANSWER FORMAT:
 - NEVER repeat, quote, paraphrase or print the user's question.
-- Start directly with: *Top 3 factors* (single asterisks only for Telegram Markdown)
+- Start directly with: TOP 3 FACTORS (plain text only; no asterisks, underscores, Markdown or HTML)
 - Give exactly 3 numbered points, each one short sentence (maximum 18 words).
 - Each point must name a specific, dated event/factor and its direct market impact.
 - After the three points, add exactly one short line: **Biggest impact:** [single strongest evidence-supported factor].
@@ -432,7 +468,7 @@ STOCK-MOVEMENT ANSWER FORMAT:
 - Do not add "Based on the provided research", an introduction, conclusion, background paragraph or source list.
 - Do not include price, percentage, quote timestamp, high/low or volume unless the user explicitly asks for them.
 - Keep the entire answer under 90 words.
-- Use clean Telegram Markdown: single asterisks for bold, never double asterisks; no nested formatting.
+- Use plain text only. Do not output asterisks, Markdown, HTML tags or literal \\n sequences.
 
 OTHER ANSWERS:
 - Simple factual questions (such as current CEO/MD): 1–2 concise lines.
@@ -482,7 +518,7 @@ OTHER ANSWERS:
                         for term in (
                             "why", "reason", "fall", "fell", "down", "declin", "drop", "plunge",
                             "factor", "influenc", "impact", "driver", "cause", "what is moving",
-                            "what's moving", "market movement"
+                            "what's moving", "market movement", "currently", "today's movement"
                         )
                     )
                     if market_question and is_reason_prompt:
