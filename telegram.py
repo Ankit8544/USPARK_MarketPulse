@@ -128,7 +128,7 @@ def answer_with_ai(chat_id, message_text, message_id=None):
     """Send a processing notice, ask Gemini, and reply to this same chat."""
     send_message(
         chat_id,
-        "⏳ <b>Please wait...</b>",
+        "⏳ <b>Please wait...</b>\nAI is preparing your answer.",
         reply_to_message_id=message_id,
     )
     prompt = (
@@ -141,7 +141,7 @@ def answer_with_ai(chat_id, message_text, message_id=None):
     if not answer or not answer.strip():
         answer = "⚠️ I couldn't generate an answer just now. Please try again."
     safe_answer = escape(answer.strip())
-    send_message(chat_id, f"{safe_answer}", reply_to_message_id=message_id)
+    send_message(chat_id, f"🤖 <b>Answer</b>\n\n{safe_answer}", reply_to_message_id=message_id)
 
 def handle_telegram_update(update):
     """Handle /start, simple greetings, and AI questions from Telegram."""
