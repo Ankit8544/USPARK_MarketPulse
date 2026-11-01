@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 import os
+from datetime import datetime
 import requests
 
 # Load environment variables
@@ -26,61 +27,68 @@ OPENROUTER_MODEL = os.getenv(
 BASE_URL = "https://openrouter.ai/api/v1/chat/completions"
 
 
+def web_search(query):
+    response = requests.post(
+        "https://api.tavily.com/search",
+        json={
+            "api_key": os.getenv("TAVILY_API_KEY"),
+            "query": query,
+            "topic": "general",
+            "search_depth": "advanced",
+            "max_results": 7,
+            "include_answer": True
+        },
+        timeout=30
+    )
+
+    response.raise_for_status()
+    return response.json()
+
+
 def Gemini(prompt: str) -> str:
-    """Send a prompt to OpenRouter using REST."""
 
     if not OPENROUTER_API_KEYS:
-        print("API Error: No OpenRouter API key found.")
-        return "🚫 AI is unavailable. Try again later."
+        return "AI unavailable."
+
+    current_date = datetime.now().strftime("%d %B %Y")
+
+    search_data = web_search(prompt)
+
+    system_prompt = f"""
+You are a real-time research AI.
+
+Current date: {current_date}
+
+RULES:
+1. Always prioritize latest available information.
+2. Never present old information as current.
+3. Verify facts using search results.
+4. For stock questions, distinguish live price,
+   historical price and market news.
+5. If information is unavailable, say so.
+6. Include source URLs.
+7. Mention the date of information.
+8. Never invent facts.
+"""
 
     payload = {
         "model": OPENROUTER_MODEL,
         "messages": [
+            {"role": "system", "content": system_prompt},
             {
                 "role": "user",
-                "content": prompt
+                "content": f"""
+Question: {prompt}
+
+Latest web search results:
+{search_data}
+"""
             }
-        ]
+        ],
+        "temperature": 0.2
     }
 
-    for api_key in OPENROUTER_API_KEYS:
-
-        try:
-            resp = requests.post(
-                BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {api_key}",
-                    "Content-Type": "application/json"
-                },
-                json=payload,
-                timeout=30
-            )
-
-        except Exception as e:
-            print("Request Error:", e)
-            return "🚫 AI is unavailable. Try again later."
-
-        if resp.status_code == 200:
-
-            try:
-                data = resp.json()
-
-                return data["choices"][0]["message"]["content"].strip()
-
-            except Exception as e:
-                print("Response Parse Error:", e)
-                return "⚠️ Unable to parse response."
-
-        print(
-            "API Error:",
-            resp.status_code,
-            resp.text[:200]
-        )
-
-        if resp.status_code not in (401, 402, 403, 429):
-            break
-
-    return "🚫 AI is unavailable. Try again later."
+    # Keep your existing API request and response code here.
 
 
 def AI_Generated_Answer(prompt: str) -> str:
