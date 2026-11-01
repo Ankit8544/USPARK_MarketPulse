@@ -2,6 +2,7 @@ import os
 import logging
 from pathlib import Path
 from zoneinfo import ZoneInfo
+import requests
 
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
@@ -25,6 +26,22 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 app = Flask(__name__)
+
+BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
+
+if BOT_TOKEN and RENDER_URL:
+    webhook_url = f"{RENDER_URL}/telegram-webhook"
+
+    response = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+        json={"url": webhook_url},
+        timeout=20
+    )
+
+    logger.info("Telegram webhook registration: %s", response.text)
+else:
+    logger.error("Telegram webhook configuration missing")
 
 
 def run_pre_market_job():
