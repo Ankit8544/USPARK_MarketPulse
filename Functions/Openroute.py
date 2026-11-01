@@ -1,5 +1,3 @@
-import re
-
 from dotenv import load_dotenv
 import os
 import logging
@@ -135,11 +133,13 @@ CORE RESEARCH RULES:
 - Keep every answer short and direct.
 
 RESPONSE FORMAT:
-- For "why/reason/impact" questions about a share, give exactly 3 to 4 concise numbered points. Prioritise the most relevant evidenced drivers. Include both India-wide/global market factors and bank-specific factors only where relevant.
-- Each point must be 1 or 2 short sentences: event/factor, then why it affects this particular share.
-- End with one short line distinguishing confirmed trigger(s) from broader possible pressure, if needed.
-- For simple factual questions (such as current CEO/MD), answer in 1 to 2 short lines with the current designation and effective date if verified.
-- For all other questions, use at most 4 concise bullets.
+- For share-price "why/reason/impact" questions, give exactly 3 to 4 numbered points.
+- EACH point MUST be a single short one-liner: maximum 12 to 16 words.
+- State the factor and its direct impact in the same line; no explanations or sub-bullets.
+- Do not add an introduction, conclusion, summary, or extra line after the numbered reasons.
+- Include India/global market factors and bank-specific factors only when recent evidence supports them.
+- For simple factual questions (such as current CEO/MD), answer in 1 to 2 short lines.
+- For all other questions, answer in at most 4 concise bullets.
 """.strip()
 
     user_content = (
@@ -206,6 +206,8 @@ RESPONSE FORMAT:
 
     logger.error("All OpenRouter attempts failed: %s", last_error)
     return "⚠️ I couldn't generate an answer right now. Please try again in a moment."
+
+
 def AI_Generated_Answer(prompt: str) -> str:
     """Wrapper used by telegram.py; always return a safe string."""
     try:
