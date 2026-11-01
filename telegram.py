@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from pymongo import ReturnDocument
 from Functions.MongoDB import users_collection, get_all_chat_ids
 from Functions.Pre_Market_Brief import get_pre_market_brief
-from Functions.GeminiAI import AI_Generated_Answer
+from Functions.Openroute import AI_Generated_Answer
 
 IST = ZoneInfo("Asia/Kolkata")
 logger = logging.getLogger(__name__)
