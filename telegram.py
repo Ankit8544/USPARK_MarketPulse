@@ -155,7 +155,16 @@ def handle_telegram_update(update):
         return
 
     command = text.split()[0].split("@")[0].lower()
-    save_or_update_user(user, chat, is_start=(command == "/start"))
+
+    try:
+        save_or_update_user(
+            user,
+            chat,
+            is_start=(command == "/start")
+        )
+    except Exception:
+        logger.exception("MongoDB user update failed")
+
     if command == "/start":
         send_message(chat_id, create_welcome_post(user), reply_to_message_id=message_id)
         return
