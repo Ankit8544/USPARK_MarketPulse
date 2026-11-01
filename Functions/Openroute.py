@@ -436,16 +436,9 @@ def _is_status_only_question(prompt: str) -> bool:
 
 def _build_intent_aware_market_reply(prompt: str, market_context: str, generated_answer: str = "") -> str:
     """Never explain a move that did not happen; answer status questions without unrelated factors."""
-    header = _market_status_header(prompt, market_context)
-    if "LATEST STATUS UNAVAILABLE" in header or "Latest verified data unavailable" in header:
-        return (
-            header + "\n"
-            "I can't confirm the market direction from fresh Yahoo Finance data, so I won't guess the reason."
-        )
-
     down_match = re.search(r"Change percent:\s*([+-]?[0-9]+(?:\.[0-9]+)?)", market_context)
     if not down_match:
-        return header + "\nLatest market direction could not be verified."
+        return "Latest market direction could not be verified."
 
     change_pct = float(down_match.group(1))
     actual_direction = "down" if change_pct < -0.005 else ("up" if change_pct > 0.005 else "flat")
@@ -454,19 +447,19 @@ def _build_intent_aware_market_reply(prompt: str, market_context: str, generated
     if _is_status_only_question(prompt):
         if requested_direction == "down":
             if actual_direction == "down":
-                return header + "\nYes. It is lower in the latest completed session."
+                return "Yes. It is lower in the latest completed session."
             detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
             if actual_direction == "up":
                 return detailed_header + "\nNo. It did not fall; it closed higher in the latest completed session."
             return detailed_header + "\nNo. It was nearly unchanged in the latest completed session."
         if requested_direction == "up":
             if actual_direction == "up":
-                return header + "\nYes. It closed higher in the latest completed session."
+                return "Yes. It closed higher in the latest completed session."
             detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
             if actual_direction == "down":
                 return detailed_header + "\nNo. It closed lower in the latest completed session."
             return detailed_header + "\nIt was nearly unchanged in the latest completed session."
-        return header
+        return
 
     if requested_direction == "down" and actual_direction != "down":
         detailed_header = _market_status_header(prompt, market_context, include_quote_details=True)
@@ -486,13 +479,10 @@ def _build_intent_aware_market_reply(prompt: str, market_context: str, generated
 
     formatted = _format_stock_reason_answer(generated_answer, prompt, market_context)
     if not formatted:
-        return header + "\nVerified news evidence is not strong enough to identify the reasons."
+        return "Verified news evidence is not strong enough to identify the reasons."
     # Formatter already includes a status heading; retain the intent-checked header only once.
-    marker = "\n\nWHY THE MARKET MOVED"
-    if marker in formatted:
-        formatted = formatted.split(marker, 1)[1]
-        return header + marker + formatted
-    return header + "\n" + formatted
+
+    return formatted
 
 def _format_stock_reason_answer(answer: str, prompt: str = "", market_context: str = "") -> str:
     """Format status first, then concise evidence-led factors in basic English."""
