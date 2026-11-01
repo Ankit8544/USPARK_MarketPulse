@@ -477,62 +477,8 @@ def _build_intent_aware_market_reply(prompt: str, market_context: str, generated
             correction = "It was nearly flat in the latest completed session."
         return detailed_header + "\n" + correction + " So there is no rise to explain for that session."
 
-    formatted = _format_stock_reason_answer(generated_answer, prompt, market_context)
-    if not formatted:
-        return "Verified news evidence is not strong enough to identify the reasons."
-    # Formatter already includes a status heading; retain the intent-checked header only once.
-
-    return formatted
-
-def _format_stock_reason_answer(answer: str, prompt: str = "", market_context: str = "") -> str:
-    """Format status first, then concise evidence-led factors in basic English."""
-    text = (answer or "").replace("\r\n", "\n").replace("\\n", "\n")
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    points, strongest, current = [], None, None
-
-    for line in lines:
-        line = re.sub(r"[*_`]", "", line).strip()
-        if re.match(r"(?i)^(top\s*\d+\s*factors|market status|nifty 50\s*[—-]|sensex\s*[—-])", line):
-            continue
-        if re.match(r"(?i)^(based on|currently influenced|the following|here are|sources?|references?|citations?)", line):
-            continue
-        impact = re.match(r"(?i)^(?:biggest impact|strongest impact)\s*:\s*(.*)$", line)
-        if impact:
-            if current:
-                points.append(current)
-                current = None
-            strongest = impact.group(1).strip()
-            continue
-        match = re.match(r"^\s*\d+[.)]\s*(.+)$", line)
-        if match:
-            if current:
-                points.append(current)
-            current = match.group(1).strip()
-        elif current:
-            current += " " + line
-
-    if current:
-        points.append(current)
-
-    cleaned = []
-    for point in points:
-        point = re.sub(r"https?://\S+", "", point).strip()
-        if re.search(r"(?i)(share price is|stock price is|trading at|quoted at|previous close|volume:|\bhigh:|\blow:)", point):
-            continue
-        if point:
-            cleaned.append(point)
-
-    cleaned = cleaned[:3]
-    if not cleaned:
-        return ""
-
-    header = _market_status_header(prompt, market_context)
-    output = [header, "", "WHY THE MARKET MOVED"]
-    output.extend(f"{i}. {point}" for i, point in enumerate(cleaned, 1))
-    output.append("BIGGEST IMPACT: " + (
-        strongest if strongest else "Not conclusively identifiable from available evidence."
-    ))
-    return "\n".join(output)
+    # Return the model's answer directly; do not impose a fixed response format.
+    return (generated_answer or "").strip() or "Verified news evidence is not strong enough to identify the reasons."
 
 def Gemini(prompt: str) -> str:
     """Generate concise, evidence-led answers using current web research."""
@@ -663,7 +609,7 @@ def Gemini(prompt: str) -> str:
     user_content = (
         f"User's exact question:\n{prompt}\n\n"
         f"Recent research results:\n{search_data}\n\n"
-        "Answer only the requested market analysis. Do not repeat the question. Use basic English and the status-first format. Explain real-world events, never quote/price movements. Do not display sources or URLs."
+        "Answer only the requested market analysis. Do not repeat the question. Use basic English and choose a natural format suited to the exact question. Explain real-world events, never quote/price movements. Do not display sources or URLs."
     )
 
     payload = {
@@ -749,4 +695,3 @@ def AI_Generated_Answer(prompt: str) -> str:
     except Exception:
         logger.exception("Unexpected error while generating AI answer")
         return "⚠️ Something went wrong while generating the answer. Please try again."
-
