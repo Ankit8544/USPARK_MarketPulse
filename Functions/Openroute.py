@@ -329,34 +329,59 @@ def yahoo_research(prompt: str) -> str:
 
 
 def _format_stock_reason_answer(answer: str) -> str:
-    """Keep only numbered catalyst points; remove price preambles and source footers."""
+    """Return only three concise catalyst points and one strongest-impact line."""
     lines = [line.strip() for line in (answer or "").splitlines() if line.strip()]
     points = []
+    strongest = None
     current = None
+
     for line in lines:
+        # Ignore echoed questions, generic introductions, and source footers.
+        if line.startswith(("**", "__")) and ("?" in line or len(line) > 120):
+            continue
+        if re.match(r"(?i)^(based on|currently influenced|the following|here are|sources?|references?|citations?)", line):
+            continue
+
+        impact = re.match(r"(?i)^\**\s*(?:biggest impact|strongest impact)\s*:\**\s*(.*)$", line)
+        if impact:
+            if current:
+                points.append(current)
+                current = None
+            strongest = impact.group(1).strip()
+            continue
+
         match = re.match(r"^\s*(\d+)[.)]\s*(.+)$", line)
         if match:
             if current:
                 points.append(current)
             current = match.group(2).strip()
         elif current:
-            # Join wrapped continuation lines to the previous point.
-            if not re.match(r"(?i)^(sources?|references?|citations?)\s*:", line):
-                current += " " + line
+            current += " " + line
+
     if current:
         points.append(current)
 
-    # Remove any accidental quote/price disclosures even if the model put them in a numbered point.
     cleaned = []
     for point in points:
+        point = re.sub(r"[*_`]", "", point).strip()
+        point = re.sub(r"https?://\\S+", "", point).strip()
         if re.search(r"(?i)(₹|\\bINR\\b|\\bRs\\.?\\s*\\d|share price is|stock price is|trading at|quoted at|previous close|volume:|\\bhigh:|\\blow:)", point):
             continue
-        point = re.sub(r"https?://\\S+", "", point).strip()
         if point:
             cleaned.append(point)
 
-    cleaned = cleaned[:4]
-    return "\n".join(f"{i}. {point}" for i, point in enumerate(cleaned, 1))
+    cleaned = cleaned[:3]
+    if not cleaned:
+        return ""
+
+    output = ["*Top 3 factors*"]
+    output.extend(f"{i}. {point}" for i, point in enumerate(cleaned, 1))
+    if strongest:
+        strongest = re.sub(r"[*_`]", "", strongest).strip()
+        output.append(f"*Biggest impact:* {strongest}")
+    else:
+        output.append("*Biggest impact:* Not conclusively identifiable from available evidence.")
+    return "\\n".join(output)
 
 def Gemini(prompt: str) -> str:
     """Generate concise, evidence-led answers using current web research."""
@@ -398,15 +423,16 @@ EVIDENCE RULES:
 - Do not include URLs, citations, publisher/source names, bibliography or a Sources section in the final answer.
 
 STOCK-MOVEMENT ANSWER FORMAT:
-- Heading: **Why the stock is falling**
-- Then 3–4 numbered points when evidence supports them; use fewer if fewer causes are actually supported.
-- Each point should be one concise sentence, preferably 15–22 words.
-- Use a clear label: **Company-specific**, **India/sector**, **Global**, or **Stock-specific**.
-- Every point must state the actual event/factor AND how it can affect the stock.
-- Do not write vague filler such as "market sentiment is weak" without naming the event and explaining the impact.
-- Clearly distinguish confirmed triggers from possible background factors.
-- No price or price-related figures in these answers.
-- No introductory paragraph or conclusion. Keep Telegram formatting clean and readable.
+- NEVER repeat, quote, paraphrase or print the user's question.
+- Start directly with: **Top 3 factors**
+- Give exactly 3 numbered points, each one short sentence (maximum 18 words).
+- Each point must name a specific, dated event/factor and its direct market impact.
+- After the three points, add exactly one short line: **Biggest impact:** [single strongest evidence-supported factor].
+- If the strongest factor cannot be established, write: **Biggest impact:** Not conclusively identifiable from available evidence.
+- Do not add "Based on the provided research", an introduction, conclusion, background paragraph or source list.
+- Do not include price, percentage, quote timestamp, high/low or volume unless the user explicitly asks for them.
+- Keep the entire answer under 90 words.
+- Use clean Telegram Markdown: single asterisks for bold, never double asterisks; no nested formatting.
 
 OTHER ANSWERS:
 - Simple factual questions (such as current CEO/MD): 1–2 concise lines.
@@ -458,7 +484,7 @@ OTHER ANSWERS:
                     if market_question and is_reason_prompt:
                         answer = _format_stock_reason_answer(answer)
                         if answer:
-                            answer = "**Why the stock is falling**\n" + answer
+                            pass
                         if not answer:
                             answer = (
                                 "**Why the stock is falling**\n"
