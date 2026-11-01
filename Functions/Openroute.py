@@ -209,7 +209,16 @@ def _yahoo_quote_and_history(symbol: str) -> str:
         quote_date = None
         quote_kind = None
 
-        if intraday is not None:
+        # During an active trading session use the latest intraday candle.
+        # Outside NSE/BSE regular hours (including weekends), prefer the completed daily close.
+        local_now = datetime.now(ZoneInfo("Asia/Kolkata"))
+        market_is_open_window = (
+            local_now.weekday() < 5
+            and (local_now.hour > 9 or (local_now.hour == 9 and local_now.minute >= 15))
+            and (local_now.hour < 15 or (local_now.hour == 15 and local_now.minute < 30))
+        )
+
+        if intraday is not None and market_is_open_window:
             latest = intraday.iloc[-1]
             latest_time = intraday.index[-1]
             latest_dt = latest_time.to_pydatetime()
@@ -354,15 +363,57 @@ def yahoo_research(prompt: str) -> str:
     return "\n\n".join(parts)[:22000]
 
 
-def _format_stock_reason_answer(answer: str) -> str:
-    """Return plain-text Telegram formatting with real line breaks."""
+def _market_status_header(prompt: str, market_context: str) -> str:
+    """Build a verified status line from the Yahoo Finance quote included in market_context."""
+    symbol = _resolve_yahoo_ticker(prompt)
+    if not symbol:
+        return "MARKET STATUS: Latest verified quote unavailable."
+
+    price_match = re.search(r"Latest available Yahoo Finance price:\s*([0-9]+(?:\.[0-9]+)?)", market_context)
+    date_match = re.search(r"Yahoo Finance quote/trading date:\s*([^\n]+)", market_context)
+    change_match = re.search(r"Change percent:\s*(-?[0-9]+(?:\.[0-9]+)?)", market_context)
+
+    labels = {
+        "^NSEI": "NIFTY 50",
+        "^BSESN": "SENSEX",
+        "USDINR=X": "USD/INR",
+        "GC=F": "GOLD",
+        "SI=F": "SILVER",
+        "UJJIVANSFB.NS": "UJJIVAN SFB (NSE)",
+        "UJJIVANSFB.BO": "UJJIVAN SFB (BSE)",
+    }
+    label = labels.get(symbol, symbol)
+
+    if not date_match or not price_match or not change_match:
+        return f"{label} — LATEST MARKET STATUS UNAVAILABLE"
+
+    quote_date = date_match.group(1).strip()
+    price = float(price_match.group(1))
+    change_pct = float(change_match.group(1))
+
+    if change_pct > 0.005:
+        direction = "CLOSED HIGHER"
+    elif change_pct < -0.005:
+        direction = "CLOSED LOWER"
+    else:
+        direction = "CLOSED FLAT"
+
+    return (
+        f"{label} — {direction}\n"
+        f"Latest session: {quote_date} | Close/last quote: {price:,.2f} | "
+        f"Change: {change_pct:+.2f}%"
+    )
+
+
+def _format_stock_reason_answer(answer: str, prompt: str = "", market_context: str = "") -> str:
+    """Format status first, then concise evidence-led factors in basic English."""
     text = (answer or "").replace("\r\n", "\n").replace("\\n", "\n")
     lines = [line.strip() for line in text.splitlines() if line.strip()]
     points, strongest, current = [], None, None
 
     for line in lines:
         line = re.sub(r"[*_`]", "", line).strip()
-        if "?" in line:
+        if re.match(r"(?i)^(top\s*\d+\s*factors|market status|nifty 50\s*[—-]|sensex\s*[—-])", line):
             continue
         if re.match(r"(?i)^(based on|currently influenced|the following|here are|sources?|references?|citations?)", line):
             continue
@@ -387,7 +438,7 @@ def _format_stock_reason_answer(answer: str) -> str:
     cleaned = []
     for point in points:
         point = re.sub(r"https?://\S+", "", point).strip()
-        if re.search(r"(?i)(₹|\bINR\b|\bRs\.?\s*\d|share price is|stock price is|trading at|quoted at|previous close|volume:|\bhigh:|\blow:)", point):
+        if re.search(r"(?i)(share price is|stock price is|trading at|quoted at|previous close|volume:|\bhigh:|\blow:)", point):
             continue
         if point:
             cleaned.append(point)
@@ -395,10 +446,12 @@ def _format_stock_reason_answer(answer: str) -> str:
     cleaned = cleaned[:3]
     if not cleaned:
         return ""
-    output = ["TOP 3 FACTORS"]
+
+    header = _market_status_header(prompt, market_context)
+    output = [header, "", "WHY THE MARKET MOVED"]
     output.extend(f"{i}. {point}" for i, point in enumerate(cleaned, 1))
     output.append("BIGGEST IMPACT: " + (
-        strongest if strongest else "Not conclusively identifiable from the available evidence."
+        strongest if strongest else "Not conclusively identifiable from available evidence."
     ))
     return "\n".join(output)
 
@@ -460,13 +513,15 @@ EVIDENCE RULES:
 
 STOCK-MOVEMENT ANSWER FORMAT:
 - NEVER repeat, quote, paraphrase or print the user's question.
-- Start directly with: TOP 3 FACTORS (plain text only; no asterisks, underscores, Markdown or HTML)
-- Give exactly 3 numbered points, each one short sentence (maximum 18 words).
-- Each point must name a specific, dated event/factor and its direct market impact.
-- After the three points, add exactly one short line: **Biggest impact:** [single strongest evidence-supported factor].
+- The application adds a verified MARKET STATUS header from Yahoo Finance before your answer. Do not create, guess or repeat any price, date, percentage or market direction.
+- After the status header, write exactly: WHY THE MARKET MOVED
+- Give up to 3 numbered points in very basic, natural English. Each point should be one or two short sentences, maximum 24 words total.
+- First explain the strongest factors that match the actual direction. If the index rose, explain what supported the rise and mention major headwinds only if relevant. If it fell, explain what caused the pressure. If flat, explain the balance of positive and negative forces.
+- Each point must name a specific, dated event/factor and explain simply how it affects Indian markets. Do not force 3 points if fewer are verified.
+- After the points, add exactly one short line: Biggest impact: [single strongest evidence-supported factor].
 - If the strongest factor cannot be established, write: **Biggest impact:** Not conclusively identifiable from available evidence.
 - Do not add "Based on the provided research", an introduction, conclusion, background paragraph or source list.
-- Do not include price, percentage, quote timestamp, high/low or volume unless the user explicitly asks for them.
+- Do not repeat price, percentage, quote timestamp, high/low or volume in the factor explanations; the app supplies the verified status header.
 - Keep the entire answer under 90 words.
 - Use plain text only. Do not output asterisks, Markdown, HTML tags or literal \\n sequences.
 
@@ -478,7 +533,7 @@ OTHER ANSWERS:
     user_content = (
         f"User's exact question:\n{prompt}\n\n"
         f"Recent research results:\n{search_data}\n\n"
-        "Answer only the requested market analysis. Do not repeat the question. Use the exact compact 3-point format. Explain real-world events, never quote/price movements. Do not display sources or URLs."
+        "Answer only the requested market analysis. Do not repeat the question. Use basic English and the status-first format. Explain real-world events, never quote/price movements. Do not display sources or URLs."
     )
 
     payload = {
@@ -522,12 +577,11 @@ OTHER ANSWERS:
                         )
                     )
                     if market_question and is_reason_prompt:
-                        answer = _format_stock_reason_answer(answer)
+                        answer = _format_stock_reason_answer(answer, prompt, search_data)
                         if not answer:
                             answer = (
-                                "*Top 3 factors*\\n"
-                                "1. Recent reliable evidence is insufficient to identify three confirmed market drivers.\\n"
-                                "*Biggest impact:* Not conclusively identifiable from available evidence."
+                                "1. Recent reliable evidence is insufficient to identify a confirmed market driver.\n"
+                                "Biggest impact: Not conclusively identifiable from available evidence."
                             )
                     # Enforce the no-sources preference even if the model adds a source footer.
                     answer = re.sub(
