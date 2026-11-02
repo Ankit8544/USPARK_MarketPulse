@@ -28,13 +28,11 @@ if not MONGO_DB_USERNAME or not MONGO_DB_PASSWORD:
 
 # MongoDB connection setup
 def connect_to_mongo():
-    print("Connecting to MongoDB...")
     uri = f"mongodb+srv://{MONGO_DB_USERNAME}:{MONGO_DB_PASSWORD}@cluster0.ou0xiys.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0"
     
     try:
         client = MongoClient(uri, server_api=ServerApi('1'))
         client.admin.command('ping')
-        print("Pinged your deployment. You successfully connected to MongoDB!")
         return client
     except Exception as e:
         print("MongoDB connection error:", e)
