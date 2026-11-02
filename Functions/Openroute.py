@@ -577,7 +577,6 @@ def Gemini(prompt: str) -> str:
             Sound like a knowledgeable human market analyst, not an automated news summary.
             Explain financial terms in easy language when necessary.
             Be direct, specific and informative.
-            Respond in exactly ONE short sentence, preferably under 20 words. Never use bullets, numbered lists, headings or multiple paragraphs.
             Avoid generic statements such as "investors are cautious" unless supported by evidence.
             Avoid repeating the user's question.
             Avoid unnecessary introductions, conclusions and filler.
