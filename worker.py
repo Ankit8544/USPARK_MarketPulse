@@ -82,6 +82,7 @@ def main():
 
     except KeyboardInterrupt:
         logger.info("Worker shutdown requested")
+        print("Worker shutdown requested")
 
     finally:
         for process in processes:

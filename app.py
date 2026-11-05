@@ -48,6 +48,7 @@ telegram_queue = Queue(
 def register_webhook():
     if not BOT_TOKEN or not RENDER_URL:
         logger.warning("Webhook configuration missing")
+        print("Webhook configuration missing")
         return
 
     try:
@@ -63,11 +64,14 @@ def register_webhook():
         result = response.json()
         if not result.get("ok"):
             logger.error("Webhook registration failed: %s", result)
+            print("Webhook registration failed:", result)
         else:
             logger.info("Telegram webhook registered")
+            print("Telegram webhook registered")
 
     except requests.RequestException:
         logger.exception("Webhook registration error")
+        print("Webhook registration error")
 
 
 register_webhook()
@@ -91,6 +95,8 @@ def health():
         }), 200
     except Exception:
         logger.exception("Redis health check failed")
+        print("Redis health check failed")
+        print("Redis health check failed")
         return jsonify({
             "status": "error",
             "redis": "disconnected",
@@ -140,6 +146,7 @@ def telegram_webhook():
     except Exception:
         redis_conn.delete(dedupe_key)
         logger.exception("Telegram update enqueue failed")
+        print("Telegram update enqueue failed")
         return jsonify({"ok": False}), 500
 
 
@@ -150,3 +157,4 @@ if __name__ == "__main__":
         debug=False,
         use_reloader=False,
     )
+    print("Flask app started on port", os.getenv("PORT", "5000"))

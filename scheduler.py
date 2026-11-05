@@ -25,13 +25,16 @@ scheduler = BlockingScheduler(
 
 def run_pre_market_job():
     logger.info("Pre-market job started")
+    print("Pre-market job started")
 
     try:
         send_pre_market_brief_to_all()
         logger.info("Pre-market job completed")
+        print("Pre-market job completed")
 
     except Exception:
         logger.exception("Pre-market job failed")
+        print("Pre-market job failed")
 
 
 scheduler.add_job(
