@@ -37,8 +37,8 @@ def run_pre_market_job():
 scheduler.add_job(
     run_pre_market_job,
     trigger="cron",
-    hour=8,
-    minute=45,
+    hour=20,
+    minute=00,
     id="pre_market_brief",
     replace_existing=True,
     max_instances=1,
@@ -48,5 +48,6 @@ scheduler.add_job(
 
 
 if __name__ == "__main__":
-    logger.info("Scheduler starting: 08:45 AM IST")
+    logger.info("Scheduler starting: 08:00 PM IST")
+    print("Scheduler starting: 08:00 PM IST")
     scheduler.start()
