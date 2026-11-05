@@ -19,3 +19,5 @@ praw
 textblob
 razorpay
 setuptools
+redis
+rq
