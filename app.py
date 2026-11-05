@@ -1,160 +1,136 @@
-
 import os
 import logging
 from pathlib import Path
-
+from zoneinfo import ZoneInfo
 import requests
+
 from flask import Flask, jsonify, request
 from dotenv import load_dotenv
-from redis import Redis
-from rq import Queue, Retry
+from apscheduler.schedulers.background import BackgroundScheduler
 
+# Load environment variables first
 BASE_DIR = Path(__file__).resolve().parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env", override=True)
+
+from telegram import (
+    handle_telegram_update,
+    send_pre_market_brief_to_all,
+)
+
+IST = ZoneInfo("Asia/Kolkata")
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+
 logger = logging.getLogger(__name__)
-
-from telegram import handle_telegram_update
-
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
 RENDER_URL = os.getenv("RENDER_EXTERNAL_URL")
-REDIS_URL = os.getenv("REDIS_URL")
 
-if not REDIS_URL:
-    raise RuntimeError("REDIS_URL is missing")
+if BOT_TOKEN and RENDER_URL:
+    webhook_url = f"{RENDER_URL}/telegram-webhook"
 
-redis_conn = Redis.from_url(
-    REDIS_URL,
-    socket_connect_timeout=10,
-    socket_timeout=10,
-    health_check_interval=30,
-)
+    response = requests.post(
+        f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
+        json={"url": webhook_url},
+        timeout=20
+    )
 
-redis_conn.ping()
-
-telegram_queue = Queue(
-    "telegram",
-    connection=redis_conn,
-    default_timeout=240,
-)
+    logger.info("Telegram webhook registration: %s", response.text)
+else:
+    logger.error("Telegram webhook configuration missing")
 
 
-def register_webhook():
-    if not BOT_TOKEN or not RENDER_URL:
-        logger.warning("Webhook configuration missing")
-        print("Webhook configuration missing")
-        return
+def run_pre_market_job():
+    """Run the job and log success or failure."""
+    logger.info("Pre-market brief job started")
 
     try:
-        response = requests.post(
-            f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook",
-            json={
-                "url": f"{RENDER_URL.rstrip('/')}/telegram-webhook"
-            },
-            timeout=20,
-        )
-        response.raise_for_status()
-
-        result = response.json()
-        if not result.get("ok"):
-            logger.error("Webhook registration failed: %s", result)
-            print("Webhook registration failed:", result)
-        else:
-            logger.info("Telegram webhook registered")
-            print("Telegram webhook registered")
-
-    except requests.RequestException:
-        logger.exception("Webhook registration error")
-        print("Webhook registration error")
+        send_pre_market_brief_to_all()
+        logger.info("Pre-market brief job completed")
+    except Exception:
+        logger.exception("Pre-market brief job failed")
+        raise
 
 
-register_webhook()
+# Start scheduler when this module is loaded.
+scheduler = BackgroundScheduler(
+    timezone=IST,
+    job_defaults={"coalesce": True, "max_instances": 1},
+)
+
+scheduler.add_job(
+    func=run_pre_market_job,
+    trigger="cron",
+    hour=8,
+    minute=45,
+    id="pre_market_brief",
+    replace_existing=True,
+    misfire_grace_time=3600,
+)
+
+scheduler.start()
+
+logger.info(
+    "Scheduler started. Next run: %s",
+    scheduler.get_job("pre_market_brief").next_run_time,
+)
 
 
 @app.get("/")
 def home():
+    job = scheduler.get_job("pre_market_brief")
+
     return jsonify({
         "app": "USPARK Market Updates",
         "status": "running",
+        "timezone": "Asia/Kolkata",
+        "scheduler_running": scheduler.running,
+        "next_run": (
+            job.next_run_time.isoformat()
+            if job and job.next_run_time
+            else None
+        ),
     })
 
 
 @app.get("/health")
 def health():
-    try:
-        redis_conn.ping()
-        return jsonify({
-            "status": "ok",
-            "redis": "connected",
-        }), 200
-    except Exception:
-        logger.exception("Redis health check failed")
-        print("Redis health check failed")
-        print("Redis health check failed")
-        return jsonify({
-            "status": "error",
-            "redis": "disconnected",
-        }), 503
+    return jsonify({"status": "ok"}), 200
 
 
 @app.post("/telegram-webhook")
 def telegram_webhook():
     update = request.get_json(silent=True)
+    print("Received Telegram update:", update)
 
     if not isinstance(update, dict):
-        return jsonify({"ok": False}), 400
-
-    update_id = update.get("update_id")
-
-    if update_id is None:
-        return jsonify({"ok": False}), 400
-
-    dedupe_key = f"telegram:update:{update_id}"
+        return jsonify({
+            "ok": False,
+            "error": "Invalid update",
+        }), 400
 
     try:
-        is_new = redis_conn.set(
-            dedupe_key,
-            "queued",
-            nx=True,
-            ex=86400,
-        )
-
-        if not is_new:
-            return jsonify({"ok": True}), 200
-
-        telegram_queue.enqueue(
-            handle_telegram_update,
-            update,
-            job_id=f"telegram-{update_id}",
-            job_timeout=240,
-            result_ttl=0,
-            failure_ttl=86400,
-            retry=Retry(
-                max=3,
-                interval=[5, 15, 30],
-            ),
-        )
-
+        handle_telegram_update(update)
         return jsonify({"ok": True}), 200
-
     except Exception:
-        redis_conn.delete(dedupe_key)
-        logger.exception("Telegram update enqueue failed")
-        print("Telegram update enqueue failed")
+        logger.exception("Telegram webhook processing failed")
         return jsonify({"ok": False}), 500
 
 
 if __name__ == "__main__":
-    app.run(
-        host="0.0.0.0",
-        port=int(os.getenv("PORT", "5000")),
-        debug=False,
-        use_reloader=False,
-    )
-    print("Flask app started on port", os.getenv("PORT", "5000"))
+    port = int(os.environ.get("PORT", "5000"))
+
+    try:
+        app.run(
+            host="0.0.0.0",
+            port=port,
+            debug=False,
+            use_reloader=False,
+        )
+    finally:
+        if scheduler.running:
+            scheduler.shutdown(wait=False)
