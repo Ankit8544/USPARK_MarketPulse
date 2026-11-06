@@ -40,19 +40,24 @@ if BOT_TOKEN and RENDER_URL:
     )
 
     logger.info("Telegram webhook registration: %s", response.text)
+    print("Telegram webhook registration response:", response.text)
 else:
     logger.error("Telegram webhook configuration missing")
+    print("Error: TELEGRAM_BOT_TOKEN or RENDER_EXTERNAL_URL not set in environment variables")
 
 
 def run_pre_market_job():
     """Run the job and log success or failure."""
     logger.info("Pre-market brief job started")
+    print("Running pre-market brief job...")
 
     try:
         send_pre_market_brief_to_all()
         logger.info("Pre-market brief job completed")
+        print("Pre-market brief job completed successfully")
     except Exception:
         logger.exception("Pre-market brief job failed")
+        print("Error occurred during pre-market brief job execution")
         raise
 
 
@@ -65,8 +70,8 @@ scheduler = BackgroundScheduler(
 scheduler.add_job(
     func=run_pre_market_job,
     trigger="cron",
-    hour=10,
-    minute=20,
+    hour=8,
+    minute=45,
     id="pre_market_brief",
     replace_existing=True,
     misfire_grace_time=3600,
@@ -83,6 +88,8 @@ logger.info(
 @app.get("/")
 def home():
     job = scheduler.get_job("pre_market_brief")
+    print("Scheduler status:", scheduler.running)
+    print("Next run time:", job.next_run_time if job else None)
 
     return jsonify({
         "app": "USPARK Market Updates",
@@ -118,11 +125,13 @@ def telegram_webhook():
         return jsonify({"ok": True}), 200
     except Exception:
         logger.exception("Telegram webhook processing failed")
+        print("Error processing Telegram update:", update)
         return jsonify({"ok": False}), 500
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", "5000"))
+    print(f"Starting Flask app on port {port}...")
 
     try:
         app.run(
@@ -134,3 +143,4 @@ if __name__ == "__main__":
     finally:
         if scheduler.running:
             scheduler.shutdown(wait=False)
+
